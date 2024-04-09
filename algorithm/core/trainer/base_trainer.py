@@ -15,7 +15,7 @@ __all__ = ['BaseTrainer']
 
 class BaseTrainer(object):
 
-    def __init__(self, model: nn.Module, data_loader, criterion, optimizer, lr_scheduler):
+    def __init__(self, model: nn.Module, data_loader, criterion, optimizer, lr_scheduler, ZO_Estim):
         self.model = model
         self.data_loader = data_loader
         self.criterion = criterion
@@ -26,6 +26,7 @@ class BaseTrainer(object):
         # optimization-related
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
+        self.ZO_Estim = ZO_Estim
 
     @property
     def checkpoint_path(self):

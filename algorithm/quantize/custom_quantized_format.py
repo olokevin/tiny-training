@@ -60,6 +60,7 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
     # Note that these parameters are added for convenience, not actually needed
     conv.x_scale = conv_cfg['params']['x_scale']
     conv.y_scale = conv_cfg['params']['y_scale']
+    conv.w_scale = conv_cfg['params']['w_scales']
     return conv
 
 
@@ -114,7 +115,9 @@ def build_quantized_block_from_cfg(blk_cfg, n_bit=8):
     else:
         q_add = None
         residual_conv = None
-    return QuantizedMbBlock(nn.Sequential(*blk), q_add, residual_conv, a_bit=n_bit)
+    convs = nn.Sequential(*blk)
+    return QuantizedMbBlock(convs, q_add, residual_conv, a_bit=n_bit)
+    # return QuantizedMbBlock(nn.Sequential(*blk), q_add, residual_conv, a_bit=n_bit)
 
 
 def build_quantized_network_from_cfg(cfg, n_bit=8):

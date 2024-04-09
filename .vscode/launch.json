@@ -1,0 +1,34 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "transfer",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/algorithm",
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0"
+      },
+      "args": ["configs/transfer.yaml", "--run_dir", "runs/flowers/mcunet-5fps/sparse_100kb/sgd_qas_nomom"],
+      "justMyCode": true
+    },
+    {
+      "name": "vww",
+      "type": "python",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/algorithm",
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "0"
+      },
+      "args": ["configs/vww.yaml", "--run_dir", "runs/flowers/mcunet-5fps/sparse_update/vww"],
+      "justMyCode": true
+    }
+  ]
+}

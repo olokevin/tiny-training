@@ -3,6 +3,7 @@ manual_seed: 0
 evaluate: false
 ray_tune: 0  # ray tuning
 resume: 0
+load_model_path: null
 
 data_provider:
   dataset: image_folder

@@ -1,12 +1,107 @@
+# flowers bias only
+load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/flowers102/mcunet-5fps/FO/20240331-001718-1312245/checkpoint/ckpt.best.pth'
+
 data_provider:
-  root: /home/jilin/dataset/flowers102
+  root: /home/yequan/dataset/flowers102
   num_classes: 102
+  # root: /home/yequan/dataset/stanford_car
+  # num_classes: 196
+  # root: /home/yequan/dataset/aircraft
+  # num_classes: 100
+  # root: /home/yequan/dataset/food101
+  # num_classes: 101
+  # root: /home/yequan/dataset/cub200
+  # num_classes: 200
+  # root: /home/yequan/dataset/pets
+  # num_classes: 37
+
+  # dataset: visualwakewords
+  # root: /home/yequan/dataset/vww
+  # num_classes: 2
+
+  # dataset: cifar10
+  # num_classes: 10
 
 run_config:
   # learning rate
-  bs256_lr: 0.01
+  bs256_lr: 0.1
   # optimizer
-  optimizer_name: sgd
+  # optimizer_name: sgd_scale_nomom
+  # optimizer_name: sgd_nomom
+  optimizer_name: sgd_scale_int_nomom
 
 net_config:
-  net_name: mbv2-w0.35
+  net_name: mcunet-5fps
+
+backward_config:
+  quantize_gradient: 1
+
+  # sparse update (100KB scheme): 88.84%
+  # enable_backward_config: 1  
+  # n_bias_update: 22
+  # manual_weight_idx: 21-24-27-30-36-39
+  # weight_update_ratio: 1-1-1-1-0.125-0.25
+
+  # update last 2 blocks (best setting for last k layers): 87.74%, uses 448KB
+  # enable_backward_config: 1 
+  # n_bias_update: 22
+  # n_weight_update: 6
+
+  # update last 12 weights and biases (best setting for last k layers): 87.74%, uses 448KB
+  # enable_backward_config: 1 
+  # n_bias_update: 22
+  # n_weight_update: 0
+
+ZO_Estim:
+  en: True
+  fc_bp: True
+
+  name: ZO_Estim_MC
+  # sigma: 1
+  n_sample: 1
+  signSGD: False
+
+  # trainable_param_list: all
+  # trainable_param_list: ['1.7.conv.0.weight']
+  trainable_param_list: ['1.9.conv.1.weight']
+  # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight']
+  # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
+  # trainable_param_list: ['1.10.conv.0.weight', '1.10.conv.1.weight', '1.10.conv.2.weight', '1.11.conv.0.weight', '1.11.conv.1.weight', '1.11.conv.2.weight', '1.12.conv.0.weight', '1.12.conv.1.weight', '1.12.conv.2.weight', '1.13.conv.0.weight', '1.13.conv.1.weight', '1.13.conv.2.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
+  
+  trainable_layer_list: ['1.9.conv.1']
+
+  # quantize_method: None
+  # sigma: 0.01
+  # quantize_method: u_fp-grad_fp
+  # quantize_method: u_fp-grad_int
+
+  sigma: 1
+  quantize_method: u_int-grad_fp
+  # quantize_method: u_int-grad_int
+
+  mask_method: None
+  # mask_method: block-30
+  # mask_method: layer
+
+  # estimate_method: forward
+  estimate_method: antithetic
+
+  obj_fn_type: classifier
+  perturb_method: batch
+
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: activation
+
+  # obj_fn_type: classifier_row
+  # perturb_method: single
+
+  # sample_method: uniform
+  # sample_method: gaussian
+  # sample_method: bernoulli
+  sample_method: coord_basis
+
+  prior_method: None
+  # prior_method: last_grad_perturb
+  # prior_method: mov_avg_perturb
+  # prior_method: last_grad_neighbor
+  

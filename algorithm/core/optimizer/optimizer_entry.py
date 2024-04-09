@@ -4,15 +4,20 @@ import numpy as np
 from ..utils import dist
 from ..utils.config import configs
 
-from .sgd_scale import SGDScale
-
+from .sgd_scale import SGDScale, SGDInt, SGDScaleInt
 
 REGISTERED_OPTIMIZER_DICT = {
     'sgd': (torch.optim.SGD, {'momentum': 0.9, 'nesterov': False}),
     'sgd_nomom': (torch.optim.SGD, {'momentum': 0, 'nesterov': False}),
 
+    'sgd_int': (SGDInt, {'momentum': 0.9, 'nesterov': False}),
+    'sgd_int_nomom': (SGDInt, {'momentum': 0, 'nesterov': False}),
+
     'sgd_scale': (SGDScale, {'momentum': 0.9, 'nesterov': False}),
-    'sgd_scale_nomom': (SGDScale, {'momentum': 0., 'nesterov': False}),    
+    'sgd_scale_nomom': (SGDScale, {'momentum': 0., 'nesterov': False}),   
+
+    'sgd_scale_int': (SGDScaleInt, {'momentum': 0.9, 'nesterov': False}),
+    'sgd_scale_int_nomom': (SGDScaleInt, {'momentum': 0., 'nesterov': False}),    
     
     'adam': (torch.optim.Adam, {}),
     'adamw': (torch.optim.AdamW, {}),
