@@ -41,7 +41,7 @@ def main():
 
     # assert configs.run_dir is not None
     if configs.run_dir is None:
-        if hasattr(configs, 'ZO_Estim'):
+        if configs.ZO_Estim.en is True:
             training_method = 'ZO'
         else:
             training_method = 'FO'
@@ -86,13 +86,13 @@ def main():
    
     model = build_mcu_model()
     
-    if configs.load_model_path is not None:
-        checkpoint = torch.load(configs.load_model_path, map_location='cpu')
+    if configs.data_provider.load_model_path is not None:
+        checkpoint = torch.load(configs.data_provider.load_model_path, map_location='cpu')
         if hasattr(model, 'module'):
             model.module.load_state_dict(checkpoint['state_dict'])
         else:
             model.load_state_dict(checkpoint['state_dict'])
-        logger.info(f'Load model from {configs.load_model_path}')
+        logger.info(f'Load model from {configs.data_provider.load_model_path}')
 
         if 'best_val' in checkpoint:
             logger.info('loaded best_val: %f' % checkpoint['best_val'])
@@ -108,29 +108,6 @@ def main():
     # for idx, (name, param) in enumerate(model.named_parameters()):
     #     print(idx, '->', name, param.numel())
 
-    # trainable_param_list = []
-
-    # from core.utils.partial_backward import get_all_conv_ops_with_names
-    # convs, names = get_all_conv_ops_with_names(model)
-    # manual_weight_idx = [21,24,27,30,36,39]
-    # for i_name, name in enumerate(names):  # from input to output
-    #     if i_name in manual_weight_idx:  # the weight is updated for this layer
-    #         trainable_param_list.append(name)
-    
-    # bias_name_list = []
-    # n_bias_update = 12
-    # for name, m in model.named_parameters():
-    #     if 'bias' in name:
-    #         bias_name_list.append(name)
-    # bias_name_list = bias_name_list[-n_bias_update:]
-
-    # n_weight_update = 12
-    # weight_name_list = names[-12:]
-
-    # print(trainable_param_list)
-    # print(weight_name_list)
-    # print(bias_name_list)
-
     if dist.size() > 1:
         model = torch.nn.parallel.DistributedDataParallel(
             model,
@@ -140,7 +117,7 @@ def main():
     optimizer = build_optimizer(model)
     lr_scheduler = build_lr_scheduler(optimizer, len(data_loader['train']))
 
-    if hasattr(configs, 'ZO_Estim'):
+    if configs.ZO_Estim.en is True:
         obj_fn = None
         ZO_Estim = build_ZO_Estim(configs.ZO_Estim, model=model, obj_fn=obj_fn)
         # if configs.ZO_Estim.fc_bp == True:
@@ -178,3 +155,28 @@ def main():
 if __name__ == '__main__':
     build_config()
     main()
+
+
+
+# trainable_param_list = []
+
+    # from core.utils.partial_backward import get_all_conv_ops_with_names
+    # convs, names = get_all_conv_ops_with_names(model)
+    # manual_weight_idx = [21,24,27,30,36,39]
+    # for i_name, name in enumerate(names):  # from input to output
+    #     if i_name in manual_weight_idx:  # the weight is updated for this layer
+    #         trainable_param_list.append(name)
+    
+    # bias_name_list = []
+    # n_bias_update = 12
+    # for name, m in model.named_parameters():
+    #     if 'bias' in name:
+    #         bias_name_list.append(name)
+    # bias_name_list = bias_name_list[-n_bias_update:]
+
+    # n_weight_update = 12
+    # weight_name_list = names[-12:]
+
+    # print(trainable_param_list)
+    # print(weight_name_list)
+    # print(bias_name_list)

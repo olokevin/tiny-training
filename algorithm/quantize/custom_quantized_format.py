@@ -55,6 +55,7 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
                            padding=padding, stride=conv_cfg['stride'],
                            groups=conv_cfg['groups'], w_bit=w_bit, a_bit=a_bit,
                            **kwargs)
+    # load pretrained data
     conv.weight.data = to_pt(conv_cfg['params']['weight'])
     conv.bias.data = to_pt(conv_cfg['params']['bias'])
     # Note that these parameters are added for convenience, not actually needed

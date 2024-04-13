@@ -1,4 +1,5 @@
 from tqdm import tqdm
+import math
 import torch
 import torch.nn.functional as F
 
@@ -9,6 +10,9 @@ from ..utils.logging import logger
 from ..utils import dist
 
 from core.ZO_Estim.ZO_Estim_entry import build_obj_fn
+
+DEBUG = None
+DEBUG = True
 
 def split_model(model):
     modules = []
@@ -30,6 +34,11 @@ def split_named_model(model, parent_name=''):
         else:
             named_modules[parent_name + name] = module
     return named_modules
+
+def save_grad(layer):
+    def hook(grad):
+        layer.out_grad = grad
+    return hook
 
 class ClassificationTrainer(BaseTrainer):
     def validate(self):
@@ -88,30 +97,34 @@ class ClassificationTrainer(BaseTrainer):
                 #     # print the name and the size of the output
                 #     print(f'Output size: {x.size()}')
                 
-                output_sizes = []
-                splited_named_models = split_named_model(self.model)
-                x = images
-                # for name, layer in splited_named_models.items():
-                #     x = layer(x)
-                #     output_sizes.append(x.size())
-                #     print(f'{name}, {x.size()}')
-                
-                split_modules_list = list(splited_named_models.items())
-                for i, (name, layer) in enumerate(split_modules_list):
-                    x = layer(x)
-                    output_sizes.append(x.size())
-                    print(f'{i}, {name}, {x.size()}')
-
                 if self.ZO_Estim is not None and configs.ZO_Estim.fc_bp == False:
                     pass
                 else:
-                    output = self.model(images)
+                    if DEBUG:
+                        splited_named_models = split_named_model(self.model)
+                        split_modules_list = list(splited_named_models.items())
+                        name_list = self.ZO_Estim.trainable_param_list[0].split('.')
+                        x = images
+                        activations = []
+                        for i, (name, layer) in enumerate(split_modules_list):
+                            x = layer(x)
+                            # if name in self.ZO_Estim.trainable_layer_list:
+                            activations.append((x, layer))
+                        
+                        for (activation, layer) in activations:
+                            activation.register_hook(save_grad(layer))
+                        
+                        output = x
+                    else:
+                        output = self.model(images)
+
                     loss = self.criterion(output, labels)
                     # backward and update
                     loss.backward()
-                    name_list = self.ZO_Estim.trainable_param_list[0].split('.')
-                    FO_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
-                    FO_grad = getattr(self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])], name_list[4]).grad.data
+
+                    if DEBUG:
+                        name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
+                        FO_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
 
                     # partial update config
                     if configs.backward_config.enable_backward_config:
@@ -125,26 +138,29 @@ class ClassificationTrainer(BaseTrainer):
                         output, loss, grads = self.ZO_Estim.estimate_grad()
 
                         self.ZO_Estim.update_grad()
-                        name_list = self.ZO_Estim.trainable_param_list[0].split('.')
-                        ZO_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
 
-                name_list = self.ZO_Estim.trainable_param_list[0].split('.')
-                w_scale = torch.tensor(self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].w_scale).view(-1, 1, 1, 1).cuda()
-                scale_FO_grad = FO_grad / w_scale
-                scale_FO_grad_2 = FO_grad / w_scale ** 2
-                scale_ZO_grad = ZO_grad / w_scale
-                scale_ZO_grad_2 = ZO_grad / w_scale ** 2
-                print('FO_grad norm:', torch.linalg.norm(FO_grad))
-                print('scale_FO_grad norm:', torch.linalg.norm(scale_FO_grad))
-                print('scale_FO_grad_2 norm:', torch.linalg.norm(scale_FO_grad_2))
+                        if DEBUG:
+                            name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
+                            ZO_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
 
-                print('ZO_grad norm:', torch.linalg.norm(ZO_grad))
-                print('scale_ZO_grad norm:', torch.linalg.norm(scale_ZO_grad))
-                print('scale_ZO_grad_2 norm:', torch.linalg.norm(scale_ZO_grad_2))
-                
-                print('FO_grad-ZO_grad error norm:', torch.linalg.norm(FO_grad-ZO_grad))
-                cos_sim_FO_ZO = F.cosine_similarity(FO_grad.view(-1), ZO_grad.view(-1), dim=0)
-                print('cos sim', cos_sim_FO_ZO)
+                if DEBUG:
+                    name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
+                    w_scale = torch.tensor(self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].w_scale).view(-1, 1, 1, 1).cuda()
+                    scale_FO_grad = FO_grad / w_scale
+                    scale_FO_grad_2 = FO_grad / w_scale ** 2
+                    scale_ZO_grad = ZO_grad / w_scale
+                    scale_ZO_grad_2 = ZO_grad / w_scale ** 2
+                    print('FO_grad norm:', torch.linalg.norm(FO_grad))
+                    print('scale_FO_grad norm:', torch.linalg.norm(scale_FO_grad))
+                    print('scale_FO_grad_2 norm:', torch.linalg.norm(scale_FO_grad_2))
+
+                    print('ZO_grad norm:', torch.linalg.norm(ZO_grad))
+                    print('scale_ZO_grad norm:', torch.linalg.norm(scale_ZO_grad))
+                    print('scale_ZO_grad_2 norm:', torch.linalg.norm(scale_ZO_grad_2))
+                    
+                    print('FO_grad-ZO_grad / √d:', torch.linalg.norm(FO_grad-ZO_grad)/math.sqrt(FO_grad.numel()))
+                    print('FO_grad-ZO_grad / FO_grad / √d:', torch.linalg.norm(FO_grad-ZO_grad)/torch.linalg.norm(FO_grad)/math.sqrt(FO_grad.numel()))
+                    print('cos sim', F.cosine_similarity(FO_grad.view(-1), ZO_grad.view(-1), dim=0))
                         
                 if hasattr(self.optimizer, 'pre_step'):  # for SGDScale optimizer
                     self.optimizer.pre_step(self.model)

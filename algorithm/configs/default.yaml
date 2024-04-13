@@ -3,7 +3,6 @@ manual_seed: 0
 evaluate: false
 ray_tune: 0  # ray tuning
 resume: 0
-load_model_path: null
 
 data_provider:
   dataset: image_folder
@@ -14,6 +13,8 @@ data_provider:
   n_worker: 8
   image_size: 128
   num_classes: null
+
+  load_model_path: null
 
 run_config:
   # learning rate
@@ -58,3 +59,6 @@ backward_config:  # for partial backward
   quantize_gradient: 0
   freeze_fc: 0
   train_scale: 0
+
+ZO_Estim:
+  en: false

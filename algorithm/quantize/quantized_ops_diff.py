@@ -127,6 +127,7 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         out = out + bias.view(1, -1, 1, 1)  # Confirmed: we don't need to cast bias
         out = round_tensor(out * effective_scale.view(1, -1, 1, 1))
         out = out + zero_y
+
         return out
 
     @staticmethod
@@ -165,6 +166,7 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
             grad_x = (grad_x / x_scales.view(1, -1, 1, 1)).round() * x_scales.view(1, -1, 1, 1)
 
         return grad_x, grad_w, grad_bias, grad_zero_x, grad_zero_y, None, None, None, None, None
+        # return grad_x, grad_w, grad_bias, None, None, None, None, None, None, None
 
 
 class QuantizedConv2dDiff(QuantizedConv2d):
@@ -188,11 +190,52 @@ class QuantizedConv2dDiff(QuantizedConv2d):
 
         self.w_bit = w_bit
         self.a_bit = a_bit if a_bit is not None else w_bit
-
+    
     def forward(self, x):
         out = _QuantizedConv2dFunc.apply(x, self.weight, self.bias, self.zero_x, self.zero_y, self.effective_scale,
                                          self.stride, self.padding, self.dilation, self.groups)
-        return _TruncateActivationRange.apply(out, self.a_bit)
+        self.binary_mask = (- 2 ** (self.a_bit - 1) <= out) & (out <= 2 ** (self.a_bit - 1) - 1)
+        out = _TruncateActivationRange.apply(out, self.a_bit)
+
+        return out
+    
+    def local_backward(self, input, binary_mask, grad_output):
+        grad_x = grad_output * binary_mask
+
+        # effective_scale = scale_x * scale_w / scale_y
+        # b_quantized = b / (w_scales * x_scale), so we may wanna compute grad_b / (w_scale * x_scale)
+        # which is grad_b / (effective_scale * scale_y)
+        input = input.round()
+        input = input - self.zero_x
+        weight = self.weight.round()
+        effective_scale = self.effective_scale
+
+        grad_zero_y = grad_output.sum([0, 2, 3])
+        _grad_conv_out = grad_output * effective_scale.view(1, -1, 1, 1)
+        grad_bias = _grad_conv_out.sum([0, 2, 3])
+        _grad_conv_in = torch.nn.grad.conv2d_input(input.shape, weight, _grad_conv_out,
+                                                   stride=self.stride, padding=self.padding,
+                                                   dilation=self.dilation, groups=self.groups)
+        grad_zero_x = - _grad_conv_in.sum([0, 2, 3])
+        grad_x = _grad_conv_in
+
+        if CONV_W_GRAD:
+            grad_w = torch.nn.grad.conv2d_weight(input, self.weight.shape, _grad_conv_out,
+                                                 stride=self.stride, padding=self.padding,
+                                                 dilation=self.dilation, groups=self.groups)
+        else:
+            grad_w = None
+
+        from core.utils.config import configs
+        if configs.backward_config.quantize_gradient:  # perform per-channel quantization
+            # quantize grad_x and grad_w
+            from .quantize_helper import get_weight_scales
+            w_scales = get_weight_scales(grad_w, n_bit=8)
+            grad_w = (grad_w / w_scales.view(-1, 1, 1, 1)).round() * w_scales.view(-1, 1, 1, 1)
+            x_scales = get_weight_scales(grad_x.transpose(0, 1))
+            grad_x = (grad_x / x_scales.view(1, -1, 1, 1)).round() * x_scales.view(1, -1, 1, 1)
+
+        return grad_x, grad_w, grad_bias
 
 
 class QuantizedMbBlockDiff(QuantizedMbBlock):

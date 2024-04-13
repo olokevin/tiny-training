@@ -1,12 +1,13 @@
 resume: 0
-# bias only
-load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/vww/mcunet-5fps/FO/20240402-041122-1471560/checkpoint/ckpt.best.pth'
 
 data_provider:
   dataset: visualwakewords
   root: /home/yequan/dataset/vww
   num_classes: 2
-  base_batch_size: 256
+  base_batch_size: 64
+
+  # bias only
+  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/vww/mcunet-5fps/FO/20240402-041122-1471560/checkpoint/ckpt.best.pth'
 
 run_config:
   # learning rate
@@ -60,12 +61,17 @@ ZO_Estim:
 
   # trainable_param_list: all
   # trainable_param_list: ['1.7.conv.0.weight']
-  trainable_param_list: ['1.12.conv.1.weight']
+  trainable_param_list: ['1.9.conv.0.weight']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
   # trainable_param_list: ['1.10.conv.0.weight', '1.10.conv.1.weight', '1.10.conv.2.weight', '1.11.conv.0.weight', '1.11.conv.1.weight', '1.11.conv.2.weight', '1.12.conv.0.weight', '1.12.conv.1.weight', '1.12.conv.2.weight', '1.13.conv.0.weight', '1.13.conv.1.weight', '1.13.conv.2.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
 
+  trainable_layer_list: ['1.13.conv.0']
+  # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
+  # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
+
   # quantize_method: None
+
   # sigma: 0.01
   # quantize_method: u_fp-grad_fp
   # quantize_method: u_fp-grad_int
@@ -78,11 +84,14 @@ ZO_Estim:
   # mask_method: block-30
   # mask_method: layer
 
-  # estimate_method: forward
-  estimate_method: antithetic
+  estimate_method: forward
+  # estimate_method: antithetic
 
-  obj_fn_type: classifier
-  perturb_method: batch
+  # obj_fn_type: classifier
+  # perturb_method: batch
+
+  obj_fn_type: classifier_layerwise
+  perturb_method: activation
 
   # obj_fn_type: classifier_row
   # perturb_method: single

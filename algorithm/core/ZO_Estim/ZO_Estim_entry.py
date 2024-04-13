@@ -5,6 +5,8 @@ def split_model(model):
     for m in model.children():
         if isinstance(m, (torch.nn.Sequential,)):
             modules += split_model(m)
+        elif hasattr(m, 'conv') and isinstance(m.conv, torch.nn.Sequential):
+            modules += split_model(m.conv)
         else:
             modules.append(m)
     return modules
