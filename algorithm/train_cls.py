@@ -4,6 +4,8 @@ import sys
 import argparse
 import time
 
+import numpy as np
+import random
 import torch
 import torch.backends.cudnn as cudnn
 import torch.utils.data.distributed
@@ -24,6 +26,17 @@ parser.add_argument('config', metavar='FILE', help='config file')
 parser.add_argument('--run_dir', type=str, metavar='DIR', help='run directory')
 parser.add_argument('--evaluate', action='store_true')
 
+def set_torch_deterministic(random_state: int = 0) -> None:
+    random_state = int(random_state) % (2 ** 32)
+    # random_state = int(random_state)
+    torch.manual_seed(random_state)
+    np.random.seed(random_state)
+    if torch.cuda.is_available():
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        torch.cuda.manual_seed_all(random_state)
+    random.seed(random_state)
+
 
 def build_config():  # separate this config requirement so that we can call main() in ray tune
     # support extra args here without setting in args
@@ -38,6 +51,9 @@ def main():
     dist.init()
     torch.backends.cudnn.benchmark = True
     torch.cuda.set_device(dist.local_rank())
+
+    # set random seed
+    set_torch_deterministic(configs.manual_seed)
 
     # assert configs.run_dir is not None
     if configs.run_dir is None:
@@ -59,9 +75,6 @@ def main():
     logger.info(' '.join([sys.executable] + sys.argv))
     logger.info(f'Experiment started: "{configs.run_dir}".')
 
-    # set random seed
-    torch.manual_seed(configs.manual_seed)
-    torch.cuda.manual_seed_all(configs.manual_seed)
 
     # create dataset
     dataset = build_dataset()
@@ -99,6 +112,9 @@ def main():
     
     model = model.cuda()
 
+    # for idx in range(14):
+    #     print(f'block 1.{idx} q_add: {model[1][idx].q_add}, residual_conv: {model[1][idx].residual_conv}')
+
     # for idx, m in enumerate(model.named_modules()):
     #     print(idx, '->', m)
     
@@ -120,12 +136,6 @@ def main():
     if configs.ZO_Estim.en is True:
         obj_fn = None
         ZO_Estim = build_ZO_Estim(configs.ZO_Estim, model=model, obj_fn=obj_fn)
-        # if configs.ZO_Estim.fc_bp == True:
-        #     for name, param in model.named_parameters():
-        #         if name in ('4.weight', '4.bias'):
-        #             param.requires_grad = True
-        #         else:
-        #             param.requires_grad = False
     else:
         ZO_Estim = None
 

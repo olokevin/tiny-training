@@ -7,18 +7,23 @@ from torch import nn
 import torch.nn.functional as F
 
 from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
+from quantize.quantized_ops_diff import QuantizedMbBlockDiff as QuantizedMbBlock
+from quantize.quantized_ops_diff import _TruncateActivationRange
 
 from scipy.stats import qmc
 from .ZO_Estim_entry import split_model, split_named_model
 from .QMC_sampler import sphere_n, coord_basis, block_mask_generator, layer_mask_generator
 
-class SplitedLayer(nn.Module):
-    def __init__(self, idx, name, layer):
+DEBUG = None
+# DEBUG = True
+
+class SplitedBlock(nn.Module):
+    def __init__(self, idx, name, block):
         super().__init__()
         self.idx = idx
         self.name = name
-        self.layer = layer
-        self.type = type(layer)
+        self.block = block
+        self.type = type(block)
         self.grad = None
     
     def update_grad(self, grad):
@@ -62,20 +67,20 @@ class ZO_Estim_MC(nn.Module):
         self.trainable_layer_list = trainable_layer_list
         
         splited_named_modules = split_named_model(model)
-        self.splited_layer_list = []
+        self.splited_block_list = []
         idx = 0
-        for name, layer in splited_named_modules.items():
-            self.splited_layer_list.append(SplitedLayer(idx, name, layer))
+        for name, block in splited_named_modules.items():
+            self.splited_block_list.append(SplitedBlock(idx, name, block))
             # print(name, layer)
             idx += 1
         
-        if trainable_layer_list == 'all':
-            self.trainable_splited_layer = self.splited_layer_list
-        else:
-            self.trainable_splited_layer = []
-            for splited_layer in self.splited_layer_list:
-                if splited_layer.name in trainable_layer_list:
-                    self.trainable_splited_layer.append(splited_layer)
+        # if trainable_layer_list == 'all':
+        #     self.trainable_splited_layer = self.splited_block_list
+        # else:
+        #     self.trainable_splited_layer = []
+        #     for splited_layer in self.splited_layer_list:
+        #         if splited_layer.name in trainable_layer_list:
+        #             self.trainable_splited_layer.append(splited_layer)
 
         self.quantize_method = quantize_method
         
@@ -305,100 +310,199 @@ class ZO_Estim_MC(nn.Module):
         
         _, old_loss = self.obj_fn(return_loss_reduction='none')
         
-        for splited_layer in self.trainable_splited_layer:
-            pre_activ = self.obj_fn(ending_idx=splited_layer.idx, return_loss_reduction='no_loss')
-            post_actv = splited_layer.layer(pre_activ)
-
-            # activation gradient
-            if self.splited_layer_list[splited_layer.idx+1].type == nn.ReLU:
-                post_actv = F.relu(post_actv)
-                mask = (post_actv > 0).float()
-            elif splited_layer.type == QuantizedConv2d:
-                assert type(self.sigma) is int
-                mask = splited_layer.layer.binary_mask.int()
+        for trainable_layer in self.trainable_layer_list:
+            trainable_layer_name = trainable_layer.split('.')
+            block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
+            if 'conv' in trainable_layer_name:
+                layer_idx = int(trainable_layer_name[3])
             else:
-                mask = torch.ones_like(post_actv)
-
-            post_actv_shape = tuple(post_actv.shape)
-            batch_sz = post_actv_shape[0]
-            post_actv = post_actv.view(batch_sz, -1)
-            mask = mask.view(batch_sz, -1)
+                layer_idx = None
             
-            ZO_grad = torch.zeros_like(post_actv, device=self.device)
-            if self.sample_method == 'coord_basis':
-                for i in range(post_actv.shape[1]):
-                    post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
-                    if splited_layer.type == QuantizedConv2d:
-                        a_bit = splited_layer.layer.a_bit
-                        post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+            for splited_block in self.splited_block_list:
+                if splited_block.name == block_name:
+                    # splited_layer = splited_block
+                    break
+            
+            ##### Estimate gradient
+            # Update all conv layers in this block
+            if layer_idx == None:
+                pre_activ = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
+                post_actv = splited_block.block(pre_activ)
 
-                    _, pos_loss = self.obj_fn(starting_idx=splited_layer.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
-                    self.forward_counter += 1
+                # activation gradient
+                if self.splited_block_list[splited_block.idx+1].type == nn.ReLU:
+                    post_actv = F.relu(post_actv)
+                    mask = (post_actv > 0).float()
+                elif splited_block.type == QuantizedMbBlock:
+                    assert type(self.sigma) is int
+                    mask = splited_block.block.conv[-1].binary_mask.int()
+                else:
+                    mask = torch.ones_like(post_actv)
 
-                    ZO_grad[:, i] = (pos_loss - old_loss) / self.sigma
-
-                    post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
-                    if splited_layer.type == QuantizedConv2d:
-                        a_bit = splited_layer.layer.a_bit
-                        post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-
-                    if self.estimate_method == 'antithetic':
-                        post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
-                        if splited_layer.type == QuantizedConv2d:
-                            a_bit = splited_layer.layer.a_bit
+                post_actv_shape = tuple(post_actv.shape)
+                batch_sz = post_actv_shape[0]
+                post_actv = post_actv.view(batch_sz, -1)
+                mask = mask.view(batch_sz, -1)
+                
+                ZO_grad = torch.zeros_like(post_actv, device=self.device)
+                if self.sample_method == 'coord_basis':
+                    for i in range(post_actv.shape[1]):
+                        post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
+                        if splited_block.type == QuantizedMbBlock:
+                            a_bit = splited_block.block.a_bit
                             post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-                        
-                        _, neg_loss = self.obj_fn(starting_idx=splited_layer.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
+
+                        _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
                         self.forward_counter += 1
 
-                        ZO_grad[:, i] = (pos_loss - neg_loss) / 2 / self.sigma
+                        ZO_grad[:, i] = (pos_loss - old_loss) / self.sigma
 
-                        post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
-                        if splited_layer.type == QuantizedConv2d:
-                            a_bit = splited_layer.layer.a_bit
+                        post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
+                        if splited_block.type == QuantizedMbBlock:
+                            a_bit = splited_block.block.a_bit
                             post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-                
-                ZO_grad = ZO_grad.view(post_actv_shape)
 
+                        if self.estimate_method == 'antithetic':
+                            post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
+                            if splited_block.type == QuantizedMbBlock:
+                                a_bit = splited_block.block.a_bit
+                                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                            
+                            _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
+                            self.forward_counter += 1
+
+                            ZO_grad[:, i] = (pos_loss - neg_loss) / 2 / self.sigma
+
+                            post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
+                            if splited_block.type == QuantizedMbBlock:
+                                a_bit = splited_block.block.a_bit
+                                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                    
+                    ZO_grad = ZO_grad.view(post_actv_shape)
+                else:
+                    raise NotImplementedError('Unknown sample method')
+            # Update single conv layer
             else:
-                raise NotImplementedError('Unknown sample method')
+                assert splited_block.type == QuantizedMbBlock
+                block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
+                pre_activ = splited_block.block.conv[:layer_idx](block_in)
+                post_actv = splited_block.block.conv[layer_idx](pre_activ)
+                copy_post_actv = post_actv.clone()
+
+                assert type(self.sigma) is int
+                mask = splited_block.block.conv[layer_idx].binary_mask.int()
+                # mask = torch.ones_like(post_actv)
+
+                post_actv_shape = tuple(post_actv.shape)
+                batch_sz = post_actv_shape[0]
+                post_actv = post_actv.view(batch_sz, -1)
+                mask = mask.view(batch_sz, -1)
+
+                ZO_grad = torch.zeros_like(post_actv, device=self.device)
+                if self.sample_method == 'coord_basis':
+                    for i in range(post_actv.shape[1]):
+                        org_post_actv = post_actv[:, i].int()
+                        post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
+                        if splited_block.type == QuantizedMbBlock:
+                            a_bit = splited_block.block.conv[layer_idx].a_bit
+                            post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                        
+                        pos_distance = post_actv[:, i] - org_post_actv
+
+                        block_out = splited_block.block.conv[layer_idx+1:](post_actv.view(post_actv_shape))
+                        if splited_block.block.q_add is not None:
+                            block_out = splited_block.block.q_add(block_in, block_out)
+                        block_out = _TruncateActivationRange.apply(block_out, splited_block.block.a_bit)
+
+                        _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
+                        self.forward_counter += 1
+
+                        if self.estimate_method == 'forward':
+                            ZO_grad[:, i] = torch.where(((pos_loss - old_loss) != 0) & (pos_distance != 0), (pos_loss - old_loss) / pos_distance, torch.zeros_like(pos_distance))
+                            post_actv[:, i] = org_post_actv
+                        elif self.estimate_method == 'antithetic':
+                            post_actv[:, i] = org_post_actv
+                            post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
+                            if splited_block.type == QuantizedMbBlock:
+                                a_bit = splited_block.block.conv[layer_idx].a_bit
+                                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                            
+                            neg_distance = org_post_actv - post_actv[:, i]
+                            
+                            block_out = splited_block.block.conv[layer_idx+1:](post_actv.view(post_actv_shape))
+                            if splited_block.block.q_add is not None:
+                                block_out = splited_block.block.q_add(block_in, block_out)
+                            block_out = _TruncateActivationRange.apply(block_out, splited_block.block.a_bit)
+
+                            _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
+                            self.forward_counter += 1
+                            
+                            ZO_grad[:, i] = torch.where(((pos_loss - neg_loss) != 0) & ((pos_distance+neg_distance) != 0), (pos_loss - neg_loss) / (pos_distance+neg_distance), torch.zeros_like((pos_distance+neg_distance)))
+
+                            post_actv[:, i] = org_post_actv
+                        else:
+                            raise NotImplementedError('Unknown estimate method')
+                    
+                    ZO_grad = ZO_grad.view(post_actv_shape)
+                else:
+                    raise NotImplementedError('Unknown sample method')
             
-            if splited_layer.type == nn.Linear:
-                splited_layer.layer.weight.grad = torch.matmul(ZO_grad.T, pre_activ) / batch_sz  # average over all batch!
-                splited_layer.layer.bias.grad = torch.mean(ZO_grad, dim=0)
-            elif splited_layer.type == QuantizedConv2d:
-                effective_scale = splited_layer.layer.effective_scale.view(1, -1, 1, 1).cuda()
-                ZO_grad = ZO_grad * effective_scale
-                grad_x, grad_w, grad_bias = splited_layer.layer.local_backward(input=pre_activ, binary_mask=splited_layer.layer.binary_mask, grad_output=ZO_grad)
-                
-                # FO_grad = splited_layer.layer.out_grad
-                # FO_grad = FO_grad * mask.view(post_actv_shape)
-                # FO_grad_x, FO_grad_w, FO_grad_bias = splited_layer.layer.local_backward(input=pre_activ, binary_mask=splited_layer.layer.binary_mask, grad_output=FO_grad)
-                # true_grad_w = splited_layer.layer.weight.grad
-                # true_grad_bias = splited_layer.layer.bias.grad
-                # true_grad_x = self.splited_layer_list[splited_layer.idx-1].layer.out_grad
+            ##### Update gradient
+            
+            if splited_block.type == nn.Linear:
+                splited_block.block.weight.grad = torch.matmul(ZO_grad.T, pre_activ) / batch_sz  # average over all batch!
+                splited_block.block.bias.grad = torch.mean(ZO_grad, dim=0)
+            elif splited_block.type == QuantizedMbBlock:
+                if layer_idx == None:
+                    raise NotImplementedError('')      
+                else:
+                    effective_scale = splited_block.block.conv[layer_idx].effective_scale.view(1, -1, 1, 1).cuda()
+                    ZO_grad = ZO_grad * mask.view(post_actv_shape)
+                    ZO_grad = ZO_grad * effective_scale
+                    grad_x, grad_w, grad_bias = splited_block.block.conv[layer_idx].local_backward(input=pre_activ, grad_output=ZO_grad)
+                    
+                    if DEBUG:
+                        FO_grad = splited_block.block.conv[layer_idx].out_grad
+                        FO_grad = FO_grad * mask.view(post_actv_shape)
 
-                # # function of local_backward
-                # print('cos sim grad_w', F.cosine_similarity(FO_grad_w.view(-1), true_grad_w.view(-1), dim=0))
-                # print('cos sim grad_bias', F.cosine_similarity(FO_grad_bias.view(-1), true_grad_bias.view(-1), dim=0))
-                # print('cos sim grad_x', F.cosine_similarity(FO_grad_x.view(-1), true_grad_x.view(-1), dim=0))
+                        FO_grad_x, FO_grad_w, FO_grad_bias = splited_block.block.conv[layer_idx].local_backward(input=pre_activ, grad_output=FO_grad)
+                        true_grad_w = splited_block.block.conv[layer_idx].weight.grad
+                        true_grad_bias = splited_block.block.conv[layer_idx].bias.grad
+                        if layer_idx == 0:
+                            true_grad_x = self.splited_block_list[splited_block.idx-1].block.out_grad
+                        else:
+                            true_grad_x = splited_block.block.conv[layer_idx-1].out_grad
 
-                # # function of ZO grad estimate
-                # effective_scale = splited_layer.layer.effective_scale.view(1, -1, 1, 1).cuda()
-                # print('cos sim grad_output', F.cosine_similarity(FO_grad.view(-1), (ZO_grad * effective_scale).view(-1), dim=0))
-                
-                # print('FO_grad:', torch.linalg.norm(FO_grad))
-                # print('ZO_grad:', torch.linalg.norm(ZO_grad))
-                # print('FO_grad / effective_scale:', torch.linalg.norm(FO_grad / effective_scale))
-                # print('FO_grad / effective_scale**2:', torch.linalg.norm(FO_grad / effective_scale**2))
-                # print('ZO_grad * effective_scale:', torch.linalg.norm(ZO_grad * effective_scale))
-                # print('ZO_grad / effective_scale:', torch.linalg.norm(ZO_grad / effective_scale))
+                        print('\n function of local_backward')
+                        print('cos sim grad_w', F.cosine_similarity(FO_grad_w.view(-1), true_grad_w.view(-1), dim=0))
+                        print('cos sim grad_bias', F.cosine_similarity(FO_grad_bias.view(-1), true_grad_bias.view(-1), dim=0))
+                        print('cos sim grad_x', F.cosine_similarity(FO_grad_x.view(-1), true_grad_x.view(-1), dim=0))
 
-                splited_layer.layer.weight.grad = grad_w
-                # splited_layer.layer.bias.grad = grad_bias
+                        mean_FO_grad_x, mean_FO_grad_w, mean_FO_grad_bias = splited_block.block.conv[layer_idx].local_backward(input=torch.mean(pre_activ, dim=0).unsqueeze(0), grad_output=torch.mean(FO_grad, dim=0).unsqueeze(0))
+                        print('\n function of batch_meaned local_backward')
+                        print('cos sim grad_w', F.cosine_similarity(mean_FO_grad_w.view(-1), true_grad_w.view(-1), dim=0))
+                        print('cos sim grad_bias', F.cosine_similarity(mean_FO_grad_bias.view(-1), true_grad_bias.view(-1), dim=0))
 
+                        print('\n ZO grad estimate')
+                        print('cos sim grad_output', F.cosine_similarity(FO_grad.view(-1), ZO_grad.view(-1), dim=0))
+                        pruned_FO_grad=FO_grad[ZO_grad!=0]
+                        pruned_ZO_grad=ZO_grad[ZO_grad!=0]
+                        print('FO_grad non_zero:', torch.linalg.norm(pruned_FO_grad))
+                        print('ZO_grad non_zero:', torch.linalg.norm(pruned_ZO_grad))
+                        print('cos sim grad_output non_zero', F.cosine_similarity(pruned_FO_grad.view(-1), pruned_ZO_grad.view(-1), dim=0))
+
+                        print('\n Grad Norm')
+                        print('FO_grad:', torch.linalg.norm(FO_grad))
+                        print('ZO_grad:', torch.linalg.norm(ZO_grad))
+                        print('FO_grad / effective_scale:', torch.linalg.norm(FO_grad / effective_scale))
+                        print('FO_grad / effective_scale**2:', torch.linalg.norm(FO_grad / effective_scale**2))
+                        print('ZO_grad * effective_scale:', torch.linalg.norm(ZO_grad * effective_scale))
+                        print('ZO_grad / effective_scale:', torch.linalg.norm(ZO_grad / effective_scale))
+
+                    splited_block.block.conv[layer_idx].weight.grad = grad_w
+                    splited_block.block.conv[layer_idx].bias.grad = grad_bias
             else:
-                raise NotImplementedError('Unknown layer type')      
+                raise NotImplementedError('Unknown block type')      
         
         gradients_list = []
         for param in self.model.parameters():
@@ -419,7 +523,7 @@ class ZO_Estim_MC(nn.Module):
     
     def estimate_grad(self):
         
-        self.model.zero_grad()
+        # self.model.zero_grad()
         if self.perturb_method == 'batch':
             outputs, old_loss = self.obj_fn()
             self.estim_grads = self.get_ZO_gradient(old_loss)

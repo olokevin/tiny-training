@@ -5,8 +5,8 @@ def split_model(model):
     for m in model.children():
         if isinstance(m, (torch.nn.Sequential,)):
             modules += split_model(m)
-        elif hasattr(m, 'conv') and isinstance(m.conv, torch.nn.Sequential):
-            modules += split_model(m.conv)
+        # elif hasattr(m, 'conv') and isinstance(m.conv, torch.nn.Sequential):
+        #     modules += split_model(m.conv)
         else:
             modules.append(m)
     return modules
@@ -17,8 +17,8 @@ def split_named_model(model, parent_name=''):
     # for name, module in model.named_modules():    # Error: non-stop recursion
         if isinstance(module, torch.nn.Sequential):
             named_modules.update(split_named_model(module, parent_name + name + '.'))
-        elif hasattr(module, 'conv') and isinstance(module.conv, torch.nn.Sequential):
-            named_modules.update(split_named_model(module.conv, parent_name + name + '.conv.'))
+        # elif hasattr(module, 'conv') and isinstance(module.conv, torch.nn.Sequential):
+        #     named_modules.update(split_named_model(module.conv, parent_name + name + '.conv.'))
         else:
             named_modules[parent_name + name] = module
     return named_modules
@@ -80,6 +80,9 @@ def build_obj_fn_classifier_acc(data, target, model, criterion):
 
 def build_obj_fn_classifier_layerwise(data, target, model, criterion):
     split_modules_list = split_model(model)
+
+    # for i, m in enumerate(split_modules_list):
+    #     print(i, '->', m)
     
     # if no attribute for _obj_fn: same as build_obj_fn_classifier
     def _obj_fn(starting_idx=0, ending_idx=None, input=None, return_loss_reduction='mean'):

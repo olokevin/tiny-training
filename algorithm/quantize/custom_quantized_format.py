@@ -116,9 +116,9 @@ def build_quantized_block_from_cfg(blk_cfg, n_bit=8):
     else:
         q_add = None
         residual_conv = None
-    convs = nn.Sequential(*blk)
-    return QuantizedMbBlock(convs, q_add, residual_conv, a_bit=n_bit)
-    # return QuantizedMbBlock(nn.Sequential(*blk), q_add, residual_conv, a_bit=n_bit)
+    # convs = nn.Sequential(*blk)
+    # return QuantizedMbBlock(convs, q_add, residual_conv, a_bit=n_bit)
+    return QuantizedMbBlock(nn.Sequential(*blk), q_add, residual_conv, a_bit=n_bit)
 
 
 def build_quantized_network_from_cfg(cfg, n_bit=8):

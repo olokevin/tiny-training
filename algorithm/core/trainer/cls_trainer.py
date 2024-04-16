@@ -9,31 +9,12 @@ from ..utils.config import configs
 from ..utils.logging import logger
 from ..utils import dist
 
-from core.ZO_Estim.ZO_Estim_entry import build_obj_fn
+from core.ZO_Estim.ZO_Estim_entry import build_obj_fn, split_model, split_named_model
+from quantize.quantized_ops_diff import QuantizedMbBlockDiff as QuantizedMbBlock
+from quantize.quantized_ops_diff import _TruncateActivationRange
 
 DEBUG = None
-DEBUG = True
-
-def split_model(model):
-    modules = []
-    for m in model.children():
-        if isinstance(m, (torch.nn.Sequential,)):
-            modules += split_model(m)
-        else:
-            modules.append(m)
-    return modules
-
-def split_named_model(model, parent_name=''):
-    named_modules = {}
-    for name, module in model.named_children():
-    # for name, module in model.named_modules():    # Error: non-stop recursion
-        if isinstance(module, torch.nn.Sequential):
-            named_modules.update(split_named_model(module, parent_name + name + '.'))
-        elif hasattr(module, 'conv') and isinstance(module.conv, torch.nn.Sequential):
-            named_modules.update(split_named_model(module.conv, parent_name + name + '.conv.'))
-        else:
-            named_modules[parent_name + name] = module
-    return named_modules
+# DEBUG = True
 
 def save_grad(layer):
     def hook(grad):
@@ -83,7 +64,7 @@ class ClassificationTrainer(BaseTrainer):
         with tqdm(total=len(self.data_loader['train']),
                   desc='Train Epoch #{}'.format(epoch + 1),
                   disable=dist.rank() > 0 or configs.ray_tune) as t:
-            for _, (images, labels) in enumerate(self.data_loader['train']):
+            for batch_idx, (images, labels) in enumerate(self.data_loader['train']):
                 images, labels = images.cuda(), labels.cuda()
                 self.optimizer.zero_grad()
 
@@ -101,23 +82,42 @@ class ClassificationTrainer(BaseTrainer):
                     pass
                 else:
                     if DEBUG:
-                        splited_named_models = split_named_model(self.model)
-                        split_modules_list = list(splited_named_models.items())
-                        name_list = self.ZO_Estim.trainable_param_list[0].split('.')
+                        splited_named_modules = split_named_model(self.model)
+                        # for name, block in splited_named_modules.items():
+                        #     print(name, block)
+
+                        # split_modules_list = split_model(self.model)
+                        # print(split_modules_list)
+
                         x = images
                         activations = []
-                        for i, (name, layer) in enumerate(split_modules_list):
-                            x = layer(x)
-                            # if name in self.ZO_Estim.trainable_layer_list:
-                            activations.append((x, layer))
+                        for name, block in splited_named_modules.items():
+                            if type(block) == QuantizedMbBlock:
+                                idx=0
+                                out = block.conv[idx](x)
+                                activations.append((out, name+'.conv.0', block.conv[0]))
+                                for conv_layer in block.conv[1:]:
+                                    idx += 1
+                                    out = conv_layer(out)
+                                    activations.append((out, name+'.conv.'+str(idx), conv_layer))
+                                if block.q_add is not None:
+                                    if block.residual_conv is not None:
+                                        x = block.residual_conv(x)
+                                    out = block.q_add(x, out)
+                                    x = _TruncateActivationRange.apply(out, block.a_bit)
+                                else:
+                                    x = out
+                            else:
+                                x = block(x)
+
+                            activations.append((x, name, block))
                         
-                        for (activation, layer) in activations:
+                        for (activation, name, layer) in activations:
                             activation.register_hook(save_grad(layer))
                         
                         output = x
                     else:
                         output = self.model(images)
-
                     loss = self.criterion(output, labels)
                     # backward and update
                     loss.backward()
@@ -187,12 +187,12 @@ class ClassificationTrainer(BaseTrainer):
                 # after step (NOTICE that lr changes every step instead of epoch)
                 self.lr_scheduler.step()
 
-                # train_info_dict = {
-                #     'train/top1': train_top1.avg.item(),
-                #     'train/loss': train_loss.avg.item(),
-                #     'train/lr': self.optimizer.param_groups[0]['lr'],
-                # }
-                # logger.info(f'epoch {epoch}: f{train_info_dict}')
+                train_info_dict = {
+                    'train/top1': train_top1.avg.item(),
+                    'train/loss': train_loss.avg.item(),
+                    'train/lr': self.optimizer.param_groups[0]['lr'],
+                }
+                logger.info(f'batch:{batch_idx}: f{train_info_dict}')
         
         return {
             'train/top1': train_top1.avg.item(),

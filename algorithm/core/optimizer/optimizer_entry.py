@@ -48,7 +48,7 @@ def build_optimizer(model):
     if hasattr(model, "module"):
         model = model.module
     if configs.run_config.bs256_lr is not None:
-        org_base_lr = configs.run_config.base_lr
+        org_base_lr = configs.run_config.base_lr * 1
         configs.run_config.base_lr = configs.run_config.bs256_lr / 256 * configs.data_provider.base_batch_size
         print(f' * Getting bs256_lr... Overwrite lr from {org_base_lr} to {configs.run_config.base_lr} '
               f'(bs{configs.data_provider.base_batch_size}), '

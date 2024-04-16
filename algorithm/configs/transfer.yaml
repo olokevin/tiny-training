@@ -1,13 +1,14 @@
 resume: 0
 
 data_provider:
-  root: /home/yequan/dataset/flowers102
-  num_classes: 102
+  # root: /home/yequan/dataset/flowers102
+  # num_classes: 102
   # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/flowers102/mcunet-5fps/FO/20240331-001718-1312245/checkpoint/ckpt.best.pth'
   
-  # root: /home/yequan/dataset/stanford_car
-  # num_classes: 196
-  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240409-044117-1662606/checkpoint/ckpt.best.pth'
+  root: /home/yequan/dataset/stanford_car
+  num_classes: 196
+  # only train last 2 blocks
+  load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240409-044117-1662606/checkpoint/ckpt.best.pth'
   
   # root: /home/yequan/dataset/aircraft
   # num_classes: 100
@@ -27,8 +28,10 @@ data_provider:
   base_batch_size: 64
 
 run_config:
+  warmup_epochs: 0
   # learning rate
   bs256_lr: 0.01
+
   # optimizer
   # optimizer_name: sgd
   # optimizer_name: adam
@@ -37,10 +40,10 @@ run_config:
   # optimizer_name: sgd_int_nomom
 
   # optimizer_name: sgd_scale
-  optimizer_name: sgd_scale_nomom
+  # optimizer_name: sgd_scale_nomom
 
   # optimizer_name: sgd_scale_int
-  # optimizer_name: sgd_scale_int_nomom
+  optimizer_name: sgd_scale_int_nomom
 
 net_config:
   net_name: mcunet-5fps
@@ -54,19 +57,25 @@ backward_config:
   # manual_weight_idx: 21-24-27-30-36-39
   # weight_update_ratio: 1-1-1-1-0.125-0.25
 
+  # sparse update 
+  enable_backward_config: 1  
+  n_bias_update: 22
+  manual_weight_idx: 21
+  weight_update_ratio: 1
+
   # update last 2 blocks (best setting for last k layers): 87.74%, uses 448KB
   # enable_backward_config: 1 
   # n_bias_update: 22
   # n_weight_update: 6
 
   # update last 12 weights and biases (best setting for last k layers): 87.74%, uses 448KB
-  enable_backward_config: 1 
-  n_bias_update: 22
-  n_weight_update: 0
-
-  # enable_backward_config: 1
-  # n_bias_update: 0
+  # enable_backward_config: 1 
+  # n_bias_update: 22
   # n_weight_update: 0
+
+  enable_backward_config: 1
+  n_bias_update: 0
+  n_weight_update: 0
 
 ZO_Estim:
   en: True
@@ -84,16 +93,17 @@ ZO_Estim:
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
   
-  trainable_layer_list: ['1.13.conv.0']
+  # trainable_layer_list: ['1.7.conv.0']
+  # trainable_layer_list: ['1.7.conv.0', '1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
-  # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
+  trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
   
   # quantize_method: None
   # sigma: 0.01
   # quantize_method: u_fp-grad_fp
   # quantize_method: u_fp-grad_int
 
-  sigma: 1
+  sigma: 50
   quantize_method: u_int-grad_fp
   # quantize_method: u_int-grad_int
 
@@ -101,8 +111,8 @@ ZO_Estim:
   # mask_method: block-30
   # mask_method: layer
 
-  estimate_method: forward
-  # estimate_method: antithetic
+  # estimate_method: forward
+  estimate_method: antithetic
 
   # obj_fn_type: classifier
   # perturb_method: batch

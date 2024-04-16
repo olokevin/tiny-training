@@ -199,8 +199,9 @@ class QuantizedConv2dDiff(QuantizedConv2d):
 
         return out
     
-    def local_backward(self, input, binary_mask, grad_output):
-        grad_x = grad_output * binary_mask
+    def local_backward(self, input, grad_output, binary_mask=None):
+        if binary_mask is not None:
+            grad_x = grad_output * binary_mask
 
         # effective_scale = scale_x * scale_w / scale_y
         # b_quantized = b / (w_scales * x_scale), so we may wanna compute grad_b / (w_scale * x_scale)
