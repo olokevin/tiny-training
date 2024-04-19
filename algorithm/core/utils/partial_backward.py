@@ -291,6 +291,8 @@ def apply_backward_config(model, backward_config):
                     ratio_ptr -= 1
             else:  # only update bias; no weight
                 conv.weight.grad = None
+                if backward_config['only_update_selected_bias'] == 1:
+                    conv.bias.grad = None
         else:  # do not even update
             conv.weight.grad = None
             conv.bias.grad = None

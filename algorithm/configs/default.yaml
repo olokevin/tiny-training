@@ -60,5 +60,7 @@ backward_config:  # for partial backward
   freeze_fc: 0
   train_scale: 0
 
+  only_update_selected_bias: 0
+
 ZO_Estim:
   en: false

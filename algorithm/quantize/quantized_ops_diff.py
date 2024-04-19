@@ -160,8 +160,8 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         if configs.backward_config.quantize_gradient:  # perform per-channel quantization
             # quantize grad_x and grad_w
             from .quantize_helper import get_weight_scales
-            w_scales = get_weight_scales(grad_w, n_bit=8)
-            grad_w = (grad_w / w_scales.view(-1, 1, 1, 1)).round() * w_scales.view(-1, 1, 1, 1)
+            # w_scales = get_weight_scales(grad_w, n_bit=8)
+            # grad_w = (grad_w / w_scales.view(-1, 1, 1, 1)).round() * w_scales.view(-1, 1, 1, 1)
             x_scales = get_weight_scales(grad_x.transpose(0, 1))
             grad_x = (grad_x / x_scales.view(1, -1, 1, 1)).round() * x_scales.view(1, -1, 1, 1)
 
@@ -195,9 +195,14 @@ class QuantizedConv2dDiff(QuantizedConv2d):
         out = _QuantizedConv2dFunc.apply(x, self.weight, self.bias, self.zero_x, self.zero_y, self.effective_scale,
                                          self.stride, self.padding, self.dilation, self.groups)
         self.binary_mask = (- 2 ** (self.a_bit - 1) <= out) & (out <= 2 ** (self.a_bit - 1) - 1)
+        self.OOR_mask = out > 2 ** (self.a_bit - 1) - 1
         out = _TruncateActivationRange.apply(out, self.a_bit)
 
         return out
+    
+    # @torch.no_grad()
+    # def get_ZO_grad_out(self):
+        
     
     def local_backward(self, input, grad_output, binary_mask=None):
         if binary_mask is not None:

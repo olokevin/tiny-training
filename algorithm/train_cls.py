@@ -55,7 +55,6 @@ def main():
     # set random seed
     set_torch_deterministic(configs.manual_seed)
 
-    # assert configs.run_dir is not None
     if configs.run_dir is None:
         if configs.ZO_Estim.en is True:
             training_method = 'ZO'

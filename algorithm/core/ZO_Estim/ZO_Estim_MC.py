@@ -14,6 +14,9 @@ from scipy.stats import qmc
 from .ZO_Estim_entry import split_model, split_named_model
 from .QMC_sampler import sphere_n, coord_basis, block_mask_generator, layer_mask_generator
 
+from ..utils.config import configs
+from ..utils.logging import logger
+
 DEBUG = None
 # DEBUG = True
 
@@ -64,8 +67,6 @@ class ZO_Estim_MC(nn.Module):
         else:
             self.trainable_param_list = trainable_param_list
 
-        self.trainable_layer_list = trainable_layer_list
-        
         splited_named_modules = split_named_model(model)
         self.splited_block_list = []
         idx = 0
@@ -74,13 +75,46 @@ class ZO_Estim_MC(nn.Module):
             # print(name, layer)
             idx += 1
         
-        # if trainable_layer_list == 'all':
-        #     self.trainable_splited_layer = self.splited_block_list
+        self.trainable_layer_list = []
+
+        if type(trainable_layer_list) is list:
+            self.trainable_layer_list = trainable_layer_list
+        elif trainable_layer_list == 'all':
+            for splited_block in self.splited_block_list:
+                if type(splited_block.block) is QuantizedMbBlock:
+                    for conv_idx in range(len(splited_block.block.conv)):
+                        self.trainable_layer_list.append(f'{splited_block.name}.conv.{conv_idx}')
+        elif 'last' in trainable_layer_list:
+            n_block = int(trainable_layer_list.split('-')[1])
+            for splited_block in self.splited_block_list[::-1]:
+                if type(splited_block.block) is QuantizedMbBlock:
+                    if n_block <= 0:
+                        break
+                    for conv_idx in range(len(splited_block.block.conv)):
+                        self.trainable_layer_list.append(f'{splited_block.name}.conv.{conv_idx}')
+                        n_block -= 1
+                        if n_block <= 0:
+                            break
+        elif 'first' in trainable_layer_list:
+            n_block = int(trainable_layer_list.split('-')[1])
+            for splited_block in self.splited_block_list:
+                if type(splited_block.block) is QuantizedMbBlock:
+                    if n_block <= 0:
+                        break
+                    for conv_idx in range(len(splited_block.block.conv)):
+                        self.trainable_layer_list.append(f'{splited_block.name}.conv.{conv_idx}')
+                        n_block -= 1
+                        if n_block <= 0:
+                            break
+        else:
+            raise ValueError('Not supported trainable_layer_list')
+        
+        
         # else:
-        #     self.trainable_splited_layer = []
+        #     self.trainable_splited_block_list = []
         #     for splited_layer in self.splited_layer_list:
         #         if splited_layer.name in trainable_layer_list:
-        #             self.trainable_splited_layer.append(splited_layer)
+        #             self.trainable_splited_block_list.append(splited_layer)
 
         self.quantize_method = quantize_method
         
@@ -230,7 +264,7 @@ class ZO_Estim_MC(nn.Module):
                 momentum = 0.9
                 self.prior_mean.mul_(momentum).add_(1 - momentum, F.normalize(grad_vec, p=2, dim=0))
 
-    def get_ZO_gradient(self, old_loss, verbose=False):
+    def get_batch_ZO_gradient(self, old_loss, verbose=False):
         dimension = self.ZO_dimension
         device = self.device
         ZO_grad = torch.zeros(dimension, device=device)
@@ -310,13 +344,13 @@ class ZO_Estim_MC(nn.Module):
         
         _, old_loss = self.obj_fn(return_loss_reduction='none')
         
-        for trainable_layer in self.trainable_layer_list:
-            trainable_layer_name = trainable_layer.split('.')
+        for trainable_layer_name in self.trainable_layer_list:
+            trainable_layer_name = trainable_layer_name.split('.')
             block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
             if 'conv' in trainable_layer_name:
-                layer_idx = int(trainable_layer_name[3])
+                conv_idx = int(trainable_layer_name[3])
             else:
-                layer_idx = None
+                conv_idx = None
             
             for splited_block in self.splited_block_list:
                 if splited_block.name == block_name:
@@ -325,7 +359,10 @@ class ZO_Estim_MC(nn.Module):
             
             ##### Estimate gradient
             # Update all conv layers in this block
-            if layer_idx == None:
+            if conv_idx == None:
+                if type(splited_block.block) is QuantizedMbBlock:
+                    raise NotImplementedError('not implemented all layers in one QuantizedMbBlock')
+                
                 pre_activ = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
                 post_actv = splited_block.block(pre_activ)
 
@@ -385,12 +422,12 @@ class ZO_Estim_MC(nn.Module):
             else:
                 assert splited_block.type == QuantizedMbBlock
                 block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
-                pre_activ = splited_block.block.conv[:layer_idx](block_in)
-                post_actv = splited_block.block.conv[layer_idx](pre_activ)
+                pre_activ = splited_block.block.conv[:conv_idx](block_in)
+                post_actv = splited_block.block.conv[conv_idx](pre_activ)
                 copy_post_actv = post_actv.clone()
 
                 assert type(self.sigma) is int
-                mask = splited_block.block.conv[layer_idx].binary_mask.int()
+                mask = splited_block.block.conv[conv_idx].binary_mask.int()
                 # mask = torch.ones_like(post_actv)
 
                 post_actv_shape = tuple(post_actv.shape)
@@ -404,12 +441,12 @@ class ZO_Estim_MC(nn.Module):
                         org_post_actv = post_actv[:, i].int()
                         post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
                         if splited_block.type == QuantizedMbBlock:
-                            a_bit = splited_block.block.conv[layer_idx].a_bit
+                            a_bit = splited_block.block.conv[conv_idx].a_bit
                             post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                         
                         pos_distance = post_actv[:, i] - org_post_actv
 
-                        block_out = splited_block.block.conv[layer_idx+1:](post_actv.view(post_actv_shape))
+                        block_out = splited_block.block.conv[conv_idx+1:](post_actv.view(post_actv_shape))
                         if splited_block.block.q_add is not None:
                             block_out = splited_block.block.q_add(block_in, block_out)
                         block_out = _TruncateActivationRange.apply(block_out, splited_block.block.a_bit)
@@ -424,12 +461,12 @@ class ZO_Estim_MC(nn.Module):
                             post_actv[:, i] = org_post_actv
                             post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
                             if splited_block.type == QuantizedMbBlock:
-                                a_bit = splited_block.block.conv[layer_idx].a_bit
+                                a_bit = splited_block.block.conv[conv_idx].a_bit
                                 post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                             
                             neg_distance = org_post_actv - post_actv[:, i]
                             
-                            block_out = splited_block.block.conv[layer_idx+1:](post_actv.view(post_actv_shape))
+                            block_out = splited_block.block.conv[conv_idx+1:](post_actv.view(post_actv_shape))
                             if splited_block.block.q_add is not None:
                                 block_out = splited_block.block.q_add(block_in, block_out)
                             block_out = _TruncateActivationRange.apply(block_out, splited_block.block.a_bit)
@@ -453,32 +490,32 @@ class ZO_Estim_MC(nn.Module):
                 splited_block.block.weight.grad = torch.matmul(ZO_grad.T, pre_activ) / batch_sz  # average over all batch!
                 splited_block.block.bias.grad = torch.mean(ZO_grad, dim=0)
             elif splited_block.type == QuantizedMbBlock:
-                if layer_idx == None:
+                if conv_idx == None:
                     raise NotImplementedError('')      
                 else:
-                    effective_scale = splited_block.block.conv[layer_idx].effective_scale.view(1, -1, 1, 1).cuda()
+                    effective_scale = splited_block.block.conv[conv_idx].effective_scale.view(1, -1, 1, 1).cuda()
                     ZO_grad = ZO_grad * mask.view(post_actv_shape)
                     ZO_grad = ZO_grad * effective_scale
-                    grad_x, grad_w, grad_bias = splited_block.block.conv[layer_idx].local_backward(input=pre_activ, grad_output=ZO_grad)
+                    grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad)
                     
                     if DEBUG:
-                        FO_grad = splited_block.block.conv[layer_idx].out_grad
+                        FO_grad = splited_block.block.conv[conv_idx].out_grad
                         FO_grad = FO_grad * mask.view(post_actv_shape)
 
-                        FO_grad_x, FO_grad_w, FO_grad_bias = splited_block.block.conv[layer_idx].local_backward(input=pre_activ, grad_output=FO_grad)
-                        true_grad_w = splited_block.block.conv[layer_idx].weight.grad
-                        true_grad_bias = splited_block.block.conv[layer_idx].bias.grad
-                        if layer_idx == 0:
+                        FO_grad_x, FO_grad_w, FO_grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=FO_grad)
+                        true_grad_w = splited_block.block.conv[conv_idx].weight.grad
+                        true_grad_bias = splited_block.block.conv[conv_idx].bias.grad
+                        if conv_idx == 0:
                             true_grad_x = self.splited_block_list[splited_block.idx-1].block.out_grad
                         else:
-                            true_grad_x = splited_block.block.conv[layer_idx-1].out_grad
+                            true_grad_x = splited_block.block.conv[conv_idx-1].out_grad
 
                         print('\n function of local_backward')
                         print('cos sim grad_w', F.cosine_similarity(FO_grad_w.view(-1), true_grad_w.view(-1), dim=0))
                         print('cos sim grad_bias', F.cosine_similarity(FO_grad_bias.view(-1), true_grad_bias.view(-1), dim=0))
                         print('cos sim grad_x', F.cosine_similarity(FO_grad_x.view(-1), true_grad_x.view(-1), dim=0))
 
-                        mean_FO_grad_x, mean_FO_grad_w, mean_FO_grad_bias = splited_block.block.conv[layer_idx].local_backward(input=torch.mean(pre_activ, dim=0).unsqueeze(0), grad_output=torch.mean(FO_grad, dim=0).unsqueeze(0))
+                        mean_FO_grad_x, mean_FO_grad_w, mean_FO_grad_bias = splited_block.block.conv[conv_idx].local_backward(input=torch.mean(pre_activ, dim=0).unsqueeze(0), grad_output=torch.mean(FO_grad, dim=0).unsqueeze(0))
                         print('\n function of batch_meaned local_backward')
                         print('cos sim grad_w', F.cosine_similarity(mean_FO_grad_w.view(-1), true_grad_w.view(-1), dim=0))
                         print('cos sim grad_bias', F.cosine_similarity(mean_FO_grad_bias.view(-1), true_grad_bias.view(-1), dim=0))
@@ -499,22 +536,90 @@ class ZO_Estim_MC(nn.Module):
                         print('ZO_grad * effective_scale:', torch.linalg.norm(ZO_grad * effective_scale))
                         print('ZO_grad / effective_scale:', torch.linalg.norm(ZO_grad / effective_scale))
 
-                    splited_block.block.conv[layer_idx].weight.grad = grad_w
-                    splited_block.block.conv[layer_idx].bias.grad = grad_bias
+                    splited_block.block.conv[conv_idx].weight.grad = grad_w
+                    splited_block.block.conv[conv_idx].bias.grad = grad_bias
             else:
                 raise NotImplementedError('Unknown block type')      
+
+        return None
+
+    def get_single_param_ZO_gradint(self, splited_block, param, block_in, old_loss, sigma, estimate_method, sample_method):
+        param_dim = param.numel()
+        param_vec = param.view(-1)
+        param_shape = param.shape
+
+        param_ZO_grad = torch.zeros_like(param_vec, device=self.device)
+
+        # sigma = torch.mean(param)
+        # print(torch.mean(param))
+
+        if sample_method == 'coord_basis':
+            for i in range(param_dim):
+                old_param_vec = param_vec[i] * 1
+                # pos
+                param_vec[i] = param_vec[i] + sigma
+                _, pos_loss = self.obj_fn(starting_idx=splited_block.idx, input=block_in, return_loss_reduction='mean')
+                param_vec[i] = param_vec[i] - sigma
+
+                # neg
+                if estimate_method == 'forward':
+                    param_ZO_grad[i] = (pos_loss - old_loss) / sigma
+                elif estimate_method == 'antithetic':
+                    param_vec[i] = param_vec[i] - sigma
+                    _, neg_loss = self.obj_fn(starting_idx=splited_block.idx, input=block_in, return_loss_reduction='mean')
+                    param_vec[i] = param_vec[i] + sigma
+
+                    param_ZO_grad[i] = (pos_loss - neg_loss) / 2 / sigma
+                else:
+                    raise NotImplementedError('Unknown estimate method')
+        else:
+            return NotImplementedError('sample method not implemented yet')
         
-        gradients_list = []
-        for param in self.model.parameters():
-            if param.grad is not None:
-                gradients_list.append(param.grad.view(-1))
+        param_ZO_grad = param_ZO_grad.view(param_shape)
+        return param_ZO_grad
+    
+    
+    def get_param_ZO_gradient(self, old_loss, verbose=False):
+
+        for trainable_layer_name in self.trainable_layer_list:
+            trainable_layer_name = trainable_layer_name.split('.')
+            block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
+
+            for splited_block in self.splited_block_list:
+                if splited_block.name == block_name:
+                    # splited_layer = splited_block
+                    break
+                
+            if 'conv' in trainable_layer_name:
+                conv_idx = int(trainable_layer_name[3])
+                trainable_layer = splited_block.block.conv[conv_idx] 
             else:
-                param.requires_grad_(False)
-        ZO_gradients_vec = torch.cat(gradients_list)
+                conv_idx = None
+                trainable_layer = splited_block.block
+            
+            block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
+            
+            ##### Estimate gradient
+            for trainable_param_name in self.trainable_param_list:
+                trainable_param = getattr(trainable_layer, trainable_param_name)
+                if isinstance(self.sigma, dict):
+                    sigma = self.sigma[trainable_param_name]
+                else:
+                    sigma = self.sigma
+                trainable_param_ZO_grad = self.get_single_param_ZO_gradint(splited_block, trainable_param, block_in, old_loss, sigma, self.estimate_method, self.sample_method)
+                if type(trainable_param) is nn.Parameter:
+                    trainable_param.grad = trainable_param_ZO_grad
+                else:
+                    lr = configs.run_config.base_lr
+                    trainable_param = trainable_param - lr * trainable_param_ZO_grad
+
         
-        return ZO_gradients_vec
+        return None
 
-
+    
+    # logger.info(f'layer {splited_block.name}.conv.{conv_idx}, out-of-range: {torch.sum(splited_block.block.conv[conv_idx].OOR_mask)}/{torch.numel(splited_block.block.conv[conv_idx].OOR_mask)} = {torch.sum(splited_block.block.conv[conv_idx].OOR_mask)/torch.numel(splited_block.block.conv[conv_idx].OOR_mask)}')
+    # logger.info(f'layer {splited_block.name}.conv.{conv_idx}, scale_grad_norm: {torch.norm(effective_scale_grad)}, scale_norm: {torch.norm(old_effective_scale)}')
+    
     def update_obj_fn(self, obj_fn):
         self.obj_fn = obj_fn
     
@@ -523,14 +628,22 @@ class ZO_Estim_MC(nn.Module):
     
     def estimate_grad(self):
         
-        # self.model.zero_grad()
+        if DEBUG:
+            pass
+        else:
+            self.model.zero_grad()
+        
         if self.perturb_method == 'batch':
             outputs, old_loss = self.obj_fn()
-            self.estim_grads = self.get_ZO_gradient(old_loss)
+            self.estim_grads = self.get_batch_ZO_gradient(old_loss)
         
         elif self.perturb_method == 'activation':
             outputs, old_loss = self.obj_fn()
             self.estim_grads = self.get_actv_ZO_gradient()
+        
+        elif self.perturb_method == 'param':
+            outputs, old_loss = self.obj_fn()
+            self.estim_grads = self.get_param_ZO_gradient(old_loss)
         
         elif self.perturb_method == 'single':
             outputs, old_loss = self.obj_fn(row=-1)
@@ -545,9 +658,7 @@ class ZO_Estim_MC(nn.Module):
         return outputs, old_loss, self.estim_grads
     
     def update_grad(self):
-        if self.perturb_method == 'activation':
-            pass
-        else:
+        if self.perturb_method == 'batch':
             u_idx = 0
             for name, param in self.model.named_parameters():
                 if name in self.trainable_param_list:
@@ -567,6 +678,8 @@ class ZO_Estim_MC(nn.Module):
                     
                     param.grad = param_grad
                     u_idx += param_len
+        else:
+            pass
     
 
     # def get_ZO_gradient_single(self, old_loss, verbose=False):

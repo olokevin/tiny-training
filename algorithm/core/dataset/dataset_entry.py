@@ -13,6 +13,13 @@ def build_dataset():
             root=configs.data_provider.root,
             transforms=ImageTransform(),
         )
+    elif configs.data_provider.dataset == 'aircraft':
+        dataset = {
+            'train': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='train',
+                                                  transform=ImageTransform()['train'], download=True),
+            'val': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='val',
+                                                transform=ImageTransform()['val'], download=True),
+        }
     elif configs.data_provider.dataset == 'visualwakewords':
         dataset = {
             'train': pyvww.pytorch.VisualWakeWordsClassification(root="/home/yequan/dataset/vww_raw/coco_dataset/train2014", 
@@ -21,8 +28,12 @@ def build_dataset():
                     annFile="/home/yequan/dataset/vww_raw/coco_dataset/annotations/person_keypoints_val2014.json", transform=ImageTransform()['val'],),
         }
     elif configs.data_provider.dataset == 'imagenet':
-        dataset = ImageNet(root=configs.data_provider.root,
-                       transforms=ImageTransform(), )
+        dataset = {
+            'train': torchvision.datasets.ImageNet(configs.data_provider.root, train=True,
+                                                  transform=ImageTransform()['train'], download=True),
+            'val': torchvision.datasets.ImageNet(configs.data_provider.root, train=False,
+                                                transform=ImageTransform()['val'], download=True),
+        }
     elif configs.data_provider.dataset == 'cifar10':
         dataset = {
             'train': torchvision.datasets.CIFAR10(configs.data_provider.root, train=True,
@@ -37,11 +48,6 @@ def build_dataset():
             'val': torchvision.datasets.CIFAR100(configs.data_provider.root, train=False,
                                                  transform=ImageTransform()['val'], download=True),
         }
-    elif configs.data_provider.dataset == 'imagehog':
-        dataset = ImageHog(
-            root=configs.data_provider.root,
-            transforms=ImageTransform(),
-        )
     else:
         raise NotImplementedError(configs.data_provider.dataset)
 

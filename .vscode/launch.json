@@ -8,11 +8,12 @@
       "name": "transfer",
       "type": "python",
       "request": "launch",
-      "program": "${file}",
+      "program": "train_cls.py",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}/algorithm",
       "env": {
-        "CUDA_VISIBLE_DEVICES": "0"
+        "CUDA_VISIBLE_DEVICES": "0",
+        "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
       },
       "args": ["configs/transfer.yaml", "--run_dir", "runs/flowers/mcunet-5fps/sparse_100kb/sgd_qas_nomom"],
       "justMyCode": true
@@ -21,11 +22,12 @@
       "name": "vww",
       "type": "python",
       "request": "launch",
-      "program": "${file}",
+      "program": "train_cls.py",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}/algorithm",
       "env": {
-        "CUDA_VISIBLE_DEVICES": "0"
+        "CUDA_VISIBLE_DEVICES": "0",
+        "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
       },
       "args": ["configs/vww.yaml", "--run_dir", "runs/flowers/mcunet-5fps/sparse_update/vww"],
       "justMyCode": true

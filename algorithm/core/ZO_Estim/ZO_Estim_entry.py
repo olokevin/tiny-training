@@ -94,10 +94,10 @@ def build_obj_fn_classifier_layerwise(data, target, model, criterion):
         else:
             assert input is not None
             y = input
-
+        
         for i in range(starting_idx, ending_idx):
             y = split_modules_list[i](y)
-        
+           
         if return_loss_reduction == 'mean':
             criterion.reduction = 'mean'
             return y, criterion(y, target)
