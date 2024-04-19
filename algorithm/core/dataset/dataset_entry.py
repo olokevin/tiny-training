@@ -37,6 +37,26 @@ def build_dataset():
             'val': torchvision.datasets.CIFAR100(configs.data_provider.root, train=False,
                                                  transform=ImageTransform()['val'], download=True),
         }
+    elif configs.data_provider.dataset == 'cars':
+        dataset = {
+            'train': torchvision.datasets.StanfordCars(configs.data_provider.root, split='train', transform=ImageTransform()['train'], download=True),
+            'val': torchvision.datasets.StanfordCars(configs.data_provider.root, split='test', transform=ImageTransform()['val'], download=True),
+        }
+    elif configs.data_provider.dataset == 'aircraft':
+        dataset = {
+            'train': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='train', annotation_level='family', transform=ImageTransform()['train'], download=True),
+            'val': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='test', annotation_level='family', transform=ImageTransform()['val'], download=True),
+        }
+    elif configs.data_provider.dataset == 'flowers':
+        dataset = {
+            'train': torchvision.datasets.Flowers102(configs.data_provider.root, split='train', transform=ImageTransform()['train'], download=True),
+            'val': torchvision.datasets.Flowers102(configs.data_provider.root, split='test', transform=ImageTransform()['val'], download=True)
+        }
+    elif configs.data_provider.dataset == 'food':
+        dataset = {
+            'train': torchvision.datasets.Food101(configs.data_provider.root, split='train', transform=ImageTransform()['train'], download=True),
+            'val': torchvision.datasets.Food101(configs.data_provider.root, split='test', transform=ImageTransform()['val'], download=True)
+        }
     elif configs.data_provider.dataset == 'imagehog':
         dataset = ImageHog(
             root=configs.data_provider.root,
