@@ -40,6 +40,8 @@ run_config:
   # partial blocks for fp32
   n_block_update: -1
 
+  iteration_decay: 1
+
 net_config:
   net_name: null
   pretrained: false
@@ -64,3 +66,4 @@ backward_config:  # for partial backward
 
 ZO_Estim:
   en: false
+  fc_bp: false

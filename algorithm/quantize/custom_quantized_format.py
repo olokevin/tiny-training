@@ -45,7 +45,7 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
     if USE_FP_SCALE:
         effective_scale = get_effective_scale(conv_cfg['params']['x_scale'], conv_cfg['params']['w_scales'],
                                               conv_cfg['params']['y_scale'])
-        kwargs['effective_scale'] = to_pt(effective_scale)
+        kwargs['effective_scale'] = to_pt(effective_scale).cuda()
     else:
         raise NotImplementedError
     if isinstance(conv_cfg['kernel_size'], int):  # make tuple
@@ -59,9 +59,9 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
     conv.weight.data = to_pt(conv_cfg['params']['weight'])
     conv.bias.data = to_pt(conv_cfg['params']['bias'])
     # Note that these parameters are added for convenience, not actually needed
-    conv.x_scale = conv_cfg['params']['x_scale']
-    conv.y_scale = conv_cfg['params']['y_scale']
-    conv.w_scale = conv_cfg['params']['w_scales']
+    conv.x_scale = to_pt(conv_cfg['params']['x_scale']).cuda()
+    conv.y_scale = to_pt(conv_cfg['params']['y_scale']).cuda()
+    conv.w_scale = to_pt(conv_cfg['params']['w_scales']).cuda()
     return conv
 
 

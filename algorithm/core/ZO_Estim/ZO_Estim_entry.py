@@ -85,7 +85,7 @@ def build_obj_fn_classifier_layerwise(data, target, model, criterion):
     #     print(i, '->', m)
     
     # if no attribute for _obj_fn: same as build_obj_fn_classifier
-    def _obj_fn(starting_idx=0, ending_idx=None, input=None, return_loss_reduction='mean'):
+    def _obj_fn(starting_idx=0, ending_idx=None, input=None, return_loss_reduction='mean', detach_idx=None):
         if ending_idx == None:
             ending_idx = len(split_modules_list)
 
@@ -97,6 +97,9 @@ def build_obj_fn_classifier_layerwise(data, target, model, criterion):
         
         for i in range(starting_idx, ending_idx):
             y = split_modules_list[i](y)
+            if detach_idx is not None and i == detach_idx:
+                y = y.detach()
+                y.requires_grad = True
            
         if return_loss_reduction == 'mean':
             criterion.reduction = 'mean'

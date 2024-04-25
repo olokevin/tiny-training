@@ -8,15 +8,21 @@ __all__ = ['build_lr_scheduler', 'CosineLRwithWarmup']
 
 
 def build_lr_scheduler(optimizer, batch_per_epoch):
+    if configs.run_config.iteration_decay == 1:
+        warmup_steps = configs.run_config.warmup_epochs * batch_per_epoch
+        total_steps = configs.run_config.n_epochs * batch_per_epoch
+    else:
+        warmup_steps = configs.run_config.warmup_epochs
+        total_steps = configs.run_config.n_epochs
     if configs.run_config.lr_schedule_name == 'cosine':
         lr_scheduler = CosineLRwithWarmup(
-            optimizer, configs.run_config.warmup_epochs * batch_per_epoch, configs.run_config.warmup_lr * dist.size(),
-            configs.run_config.n_epochs * batch_per_epoch,
+            optimizer, warmup_steps, configs.run_config.warmup_lr * dist.size(),
+            total_steps,
             final_lr=configs.run_config.get('final_lr', 0) * dist.size()
         )
     elif configs.run_config.lr_schedule_name == 'step':
         lr_scheduler = StepLRwithWarmup(
-            optimizer, configs.run_config.warmup_epochs * batch_per_epoch, configs.run_config.warmup_lr * dist.size(),
+            optimizer, warmup_steps, configs.run_config.warmup_lr * dist.size(),
             configs.run_config.get('lr_step_size', 30) * batch_per_epoch,
             configs.run_config.get('lr_step_gamma', 0.1)
         )

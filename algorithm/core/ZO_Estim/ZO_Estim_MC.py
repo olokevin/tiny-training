@@ -110,11 +110,10 @@ class ZO_Estim_MC(nn.Module):
             raise ValueError('Not supported trainable_layer_list')
         
         
-        # else:
-        #     self.trainable_splited_block_list = []
-        #     for splited_layer in self.splited_layer_list:
-        #         if splited_layer.name in trainable_layer_list:
-        #             self.trainable_splited_block_list.append(splited_layer)
+        self.trainable_splited_block_list = []
+        for splited_block in self.splited_block_list:
+            if splited_block.name in self.trainable_layer_list:
+                self.trainable_splited_block_list.append(splited_block)
 
         self.quantize_method = quantize_method
         
@@ -196,6 +195,15 @@ class ZO_Estim_MC(nn.Module):
         elif self.sample_method == 'sphere_n':
             sample = next(self.sampler)
             sample = sample.to(device)
+        else:
+            return NotImplementedError('Unlnown sample method', self.sample_method)
+        
+        return sample
+
+    def _sample_unit_sphere_quantized(self, shape, sample_method, device):
+        
+        if sample_method == 'bernoulli':
+            sample = torch.ones(shape, device=device) - 2*torch.bernoulli(0.5*torch.ones(shape, device=device))
         else:
             return NotImplementedError('Unlnown sample method', self.sample_method)
         
@@ -341,9 +349,6 @@ class ZO_Estim_MC(nn.Module):
     
     
     def get_actv_ZO_gradient(self, verbose=False):
-        
-        _, old_loss = self.obj_fn(return_loss_reduction='none')
-        
         for trainable_layer_name in self.trainable_layer_list:
             trainable_layer_name = trainable_layer_name.split('.')
             block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
@@ -360,147 +365,62 @@ class ZO_Estim_MC(nn.Module):
             ##### Estimate gradient
             # Update all conv layers in this block
             if conv_idx == None:
-                if type(splited_block.block) is QuantizedMbBlock:
-                    raise NotImplementedError('not implemented all layers in one QuantizedMbBlock')
-                
-                pre_activ = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
-                post_actv = splited_block.block(pre_activ)
-
-                # activation gradient
-                if self.splited_block_list[splited_block.idx+1].type == nn.ReLU:
-                    post_actv = F.relu(post_actv)
-                    mask = (post_actv > 0).float()
-                elif splited_block.type == QuantizedMbBlock:
-                    assert type(self.sigma) is int
-                    mask = splited_block.block.conv[-1].binary_mask.int()
-                else:
-                    mask = torch.ones_like(post_actv)
-
-                post_actv_shape = tuple(post_actv.shape)
-                batch_sz = post_actv_shape[0]
-                post_actv = post_actv.view(batch_sz, -1)
-                mask = mask.view(batch_sz, -1)
-                
-                ZO_grad = torch.zeros_like(post_actv, device=self.device)
-                if self.sample_method == 'coord_basis':
-                    for i in range(post_actv.shape[1]):
-                        post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
-                        if splited_block.type == QuantizedMbBlock:
-                            a_bit = splited_block.block.a_bit
-                            post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-
-                        _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
-                        self.forward_counter += 1
-
-                        ZO_grad[:, i] = (pos_loss - old_loss) / self.sigma
-
-                        post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
-                        if splited_block.type == QuantizedMbBlock:
-                            a_bit = splited_block.block.a_bit
-                            post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-
-                        if self.estimate_method == 'antithetic':
-                            post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
-                            if splited_block.type == QuantizedMbBlock:
-                                a_bit = splited_block.block.a_bit
-                                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-                            
-                            _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
-                            self.forward_counter += 1
-
-                            ZO_grad[:, i] = (pos_loss - neg_loss) / 2 / self.sigma
-
-                            post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
-                            if splited_block.type == QuantizedMbBlock:
-                                a_bit = splited_block.block.a_bit
-                                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-                    
-                    ZO_grad = ZO_grad.view(post_actv_shape)
-                else:
-                    raise NotImplementedError('Unknown sample method')
+                ZO_grad, pre_activ, mask = self.get_block_actv_ZO_gradint(splited_block, local_backward_args=True)
             # Update single conv layer
             else:
-                assert splited_block.type == QuantizedMbBlock
-                block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
-                pre_activ = splited_block.block.conv[:conv_idx](block_in)
-                post_actv = splited_block.block.conv[conv_idx](pre_activ)
-                copy_post_actv = post_actv.clone()
-
-                assert type(self.sigma) is int
-                mask = splited_block.block.conv[conv_idx].binary_mask.int()
-                # mask = torch.ones_like(post_actv)
-
-                post_actv_shape = tuple(post_actv.shape)
-                batch_sz = post_actv_shape[0]
-                post_actv = post_actv.view(batch_sz, -1)
-                mask = mask.view(batch_sz, -1)
-
-                ZO_grad = torch.zeros_like(post_actv, device=self.device)
-                if self.sample_method == 'coord_basis':
-                    for i in range(post_actv.shape[1]):
-                        org_post_actv = post_actv[:, i].int()
-                        post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
-                        if splited_block.type == QuantizedMbBlock:
-                            a_bit = splited_block.block.conv[conv_idx].a_bit
-                            post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-                        
-                        pos_distance = post_actv[:, i] - org_post_actv
-
-                        block_out = splited_block.block.conv[conv_idx+1:](post_actv.view(post_actv_shape))
-                        if splited_block.block.q_add is not None:
-                            block_out = splited_block.block.q_add(block_in, block_out)
-                        block_out = _TruncateActivationRange.apply(block_out, splited_block.block.a_bit)
-
-                        _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
-                        self.forward_counter += 1
-
-                        if self.estimate_method == 'forward':
-                            ZO_grad[:, i] = torch.where(((pos_loss - old_loss) != 0) & (pos_distance != 0), (pos_loss - old_loss) / pos_distance, torch.zeros_like(pos_distance))
-                            post_actv[:, i] = org_post_actv
-                        elif self.estimate_method == 'antithetic':
-                            post_actv[:, i] = org_post_actv
-                            post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
-                            if splited_block.type == QuantizedMbBlock:
-                                a_bit = splited_block.block.conv[conv_idx].a_bit
-                                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-                            
-                            neg_distance = org_post_actv - post_actv[:, i]
-                            
-                            block_out = splited_block.block.conv[conv_idx+1:](post_actv.view(post_actv_shape))
-                            if splited_block.block.q_add is not None:
-                                block_out = splited_block.block.q_add(block_in, block_out)
-                            block_out = _TruncateActivationRange.apply(block_out, splited_block.block.a_bit)
-
-                            _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
-                            self.forward_counter += 1
-                            
-                            ZO_grad[:, i] = torch.where(((pos_loss - neg_loss) != 0) & ((pos_distance+neg_distance) != 0), (pos_loss - neg_loss) / (pos_distance+neg_distance), torch.zeros_like((pos_distance+neg_distance)))
-
-                            post_actv[:, i] = org_post_actv
-                        else:
-                            raise NotImplementedError('Unknown estimate method')
-                    
-                    ZO_grad = ZO_grad.view(post_actv_shape)
-                else:
-                    raise NotImplementedError('Unknown sample method')
+                ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, local_backward_args=True)
             
             ##### Update gradient
+            batch_sz = ZO_grad.shape[0]
             
             if splited_block.type == nn.Linear:
                 splited_block.block.weight.grad = torch.matmul(ZO_grad.T, pre_activ) / batch_sz  # average over all batch!
                 splited_block.block.bias.grad = torch.mean(ZO_grad, dim=0)
             elif splited_block.type == QuantizedMbBlock:
                 if conv_idx == None:
-                    raise NotImplementedError('')      
+                    if DEBUG:
+                        FO_grad = splited_block.block.out_grad
+                        FO_grad = FO_grad * mask
+
+                        if splited_block.block.q_add is not None:
+                            scale_y = splited_block.block.q_add.scale_y
+                            scale_x = splited_block.block.q_add.scale_x1
+                            effective_scale = splited_block.block.conv[-1].effective_scale
+                        else:
+                            scale_y = splited_block.block.conv[-1].y_scale
+                            scale_x = splited_block.block.conv[-1].x_scale
+                            effective_scale = splited_block.block.conv[-1].effective_scale
+
+                        print('\nGrad Norm')
+                        print('FO_grad:', torch.linalg.norm(FO_grad))
+                        print('ZO_grad:', torch.linalg.norm(ZO_grad))
+
+                        print('\nZO grad estimate')
+                        print('cos sim grad_output', F.cosine_similarity(FO_grad.view(-1), ZO_grad.view(-1), dim=0))
+
+                        # normalize_FO_grad = F.normalize(FO_grad.view(batch_sz, -1), p=2, dim=1)
+                        # normalize_ZO_grad = F.normalize(ZO_grad.view(batch_sz, -1), p=2, dim=1)
+                        # relative_error = torch.norm(normalize_FO_grad - normalize_ZO_grad, dim=1).mean()
+                        # print('relative_error: ', relative_error)
+                        # print('relative_error / √d:', relative_error/math.sqrt(FO_grad.numel()))
+
+                        print('\nscaled grad')
+                        # print('FO_grad / scale_y:', torch.linalg.norm(FO_grad / scale_y))
+                        # print('FO_grad / scale_y**2:', torch.linalg.norm(FO_grad / scale_y**2))
+
+                        print('ZO_grad * scale_y:', torch.linalg.norm(ZO_grad * scale_y))
+                        print('ZO_grad * scale_x:', torch.linalg.norm(ZO_grad * scale_x))
+                        print('ZO_grad * effective_scale:', torch.linalg.norm(ZO_grad * effective_scale.view(1, -1, 1, 1).cuda()))
+
                 else:
                     effective_scale = splited_block.block.conv[conv_idx].effective_scale.view(1, -1, 1, 1).cuda()
-                    ZO_grad = ZO_grad * mask.view(post_actv_shape)
-                    ZO_grad = ZO_grad * effective_scale
+                    # ZO_grad = ZO_grad * mask
+                    # ZO_grad = ZO_grad * effective_scale
                     grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad)
                     
                     if DEBUG:
                         FO_grad = splited_block.block.conv[conv_idx].out_grad
-                        FO_grad = FO_grad * mask.view(post_actv_shape)
+                        FO_grad = FO_grad * mask
 
                         FO_grad_x, FO_grad_w, FO_grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=FO_grad)
                         true_grad_w = splited_block.block.conv[conv_idx].weight.grad
@@ -540,8 +460,247 @@ class ZO_Estim_MC(nn.Module):
                     splited_block.block.conv[conv_idx].bias.grad = grad_bias
             else:
                 raise NotImplementedError('Unknown block type')      
-
         return None
+
+    def get_layer_actv_ZO_gradint(self, splited_block, conv_idx, local_backward_args=False):
+        assert splited_block.type == QuantizedMbBlock
+        block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
+        pre_activ = splited_block.block.conv[:conv_idx](block_in)
+        post_actv = splited_block.block.conv[conv_idx](pre_activ)
+        copy_post_actv = post_actv.clone()
+
+        assert type(self.sigma) is int
+        mask = splited_block.block.conv[conv_idx].binary_mask.int()
+        # mask = torch.ones_like(post_actv)
+
+        post_actv_shape = tuple(post_actv.shape)
+        batch_sz = post_actv_shape[0]
+        post_actv = post_actv.view(batch_sz, -1)
+        mask = mask.view(batch_sz, -1)
+
+        ZO_grad = torch.zeros_like(post_actv, device=self.device)
+        if self.sample_method == 'coord_basis':
+            for i in range(post_actv.shape[1]):
+                org_post_actv = post_actv[:, i].int()
+                post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
+                if splited_block.type == QuantizedMbBlock:
+                    a_bit = splited_block.block.conv[conv_idx].a_bit
+                    post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                
+                pos_distance = post_actv[:, i] - org_post_actv
+
+                block_out = splited_block.block.conv[conv_idx+1:](post_actv.view(post_actv_shape))
+                if splited_block.block.q_add is not None:
+                    block_out = splited_block.block.q_add(block_in, block_out)
+                block_out = _TruncateActivationRange.apply(block_out, splited_block.block.a_bit)
+
+                _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
+                self.forward_counter += 1
+
+                if self.estimate_method == 'forward':
+                    post_actv[:, i] = org_post_actv
+                    _, old_loss = self.obj_fn(return_loss_reduction='none')
+
+                    for batch_idx in range(batch_sz):
+                        if ((pos_loss[batch_idx] - old_loss[batch_idx]) != 0) & (pos_distance[batch_idx] != 0):
+                            ZO_grad[batch_idx,i] = (pos_loss[batch_idx] - neg_loss[batch_idx]) / pos_distance[batch_idx]
+                        else:
+                            ZO_grad[batch_idx,i] = 0
+
+                    post_actv[:, i] = org_post_actv
+                elif self.estimate_method == 'antithetic':
+                    post_actv[:, i] = org_post_actv
+                    post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
+                    if splited_block.type == QuantizedMbBlock:
+                        a_bit = splited_block.block.conv[conv_idx].a_bit
+                        post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                    
+                    neg_distance = org_post_actv - post_actv[:, i]
+                    
+                    block_out = splited_block.block.conv[conv_idx+1:](post_actv.view(post_actv_shape))
+                    if splited_block.block.q_add is not None:
+                        block_out = splited_block.block.q_add(block_in, block_out)
+                    block_out = _TruncateActivationRange.apply(block_out, splited_block.block.a_bit)
+
+                    _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
+                    self.forward_counter += 1
+                    
+                    for batch_idx in range(batch_sz):
+                        if ((pos_loss[batch_idx] - neg_loss[batch_idx]) != 0) & ((pos_distance[batch_idx]+neg_distance[batch_idx]) != 0):
+                            ZO_grad[batch_idx,i] = (pos_loss[batch_idx] - neg_loss[batch_idx]) / (pos_distance[batch_idx]+neg_distance[batch_idx])
+                        else:
+                            ZO_grad[batch_idx,i] = 0
+
+                    post_actv[:, i] = org_post_actv
+                else:
+                    raise NotImplementedError('Unknown estimate method')
+            
+            ZO_grad = ZO_grad.view(post_actv_shape)
+            mask = mask.view(post_actv_shape)
+        else:
+            raise NotImplementedError('Unknown sample method')
+        
+        if local_backward_args == True:
+            return ZO_grad, pre_activ, mask
+        else:
+            return ZO_grad
+    
+    def get_block_actv_ZO_gradint(self, splited_block, local_backward_args=False):
+        assert splited_block.type == QuantizedMbBlock
+
+        pre_activ = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
+        post_actv = splited_block.block(pre_activ)
+
+        assert type(self.sigma) is int
+        assert hasattr(splited_block.block, 'binary_mask')
+        mask = splited_block.block.binary_mask.int()
+        # mask = torch.ones_like(post_actv)
+
+        post_actv_shape = tuple(post_actv.shape)
+        batch_sz = post_actv_shape[0]
+        post_actv = post_actv.view(batch_sz, -1)
+        mask = mask.view(batch_sz, -1)
+
+        ZO_grad = torch.zeros_like(post_actv, device=self.device)
+
+        if self.sample_method == 'coord_basis':
+            for i in range(post_actv.shape[1]):
+                org_post_actv = post_actv[:, i].int()
+
+                post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
+                a_bit = splited_block.block.a_bit
+                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                
+                pos_distance = post_actv[:, i] - org_post_actv
+
+                _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
+                self.forward_counter += 1
+
+                if self.estimate_method == 'forward':
+                    post_actv[:, i] = org_post_actv
+                    _, old_loss = self.obj_fn(return_loss_reduction='none')
+
+                    for batch_idx in range(batch_sz):
+                        if ((pos_loss[batch_idx] - old_loss[batch_idx]) != 0) & (pos_distance[batch_idx] != 0):
+                            ZO_grad[batch_idx,i] = (pos_loss[batch_idx] - neg_loss[batch_idx]) / pos_distance[batch_idx]
+                        else:
+                            ZO_grad[batch_idx,i] = 0
+
+                elif self.estimate_method == 'antithetic':
+                    post_actv[:, i] = org_post_actv
+
+                    post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
+                    a_bit = splited_block.block.a_bit
+                    post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                    
+                    neg_distance = org_post_actv - post_actv[:, i]
+                
+                    _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
+                    self.forward_counter += 1
+                    
+                    for batch_idx in range(batch_sz):
+                        if ((pos_loss[batch_idx] - neg_loss[batch_idx]) != 0) & ((pos_distance[batch_idx]+neg_distance[batch_idx]) != 0):
+                            ZO_grad[batch_idx,i] = (pos_loss[batch_idx] - neg_loss[batch_idx]) / (pos_distance[batch_idx]+neg_distance[batch_idx])
+                        else:
+                            ZO_grad[batch_idx,i] = 0
+
+                    post_actv[:, i] = org_post_actv
+                else:
+                    raise NotImplementedError('Unknown estimate method')
+            
+            ZO_grad = ZO_grad.view(post_actv_shape)
+            mask = mask.view(post_actv_shape)
+        elif self.sample_method == 'bernoulli':         
+            org_post_actv = post_actv[:, i].int()
+
+            for i in range(self.n_sample):
+                u = mask * self._sample_unit_sphere_quantized(post_actv_shape, self.sample_method, self.device)
+
+                post_actv = post_actv + u * self.sigma
+
+                # a_bit = splited_block.block.a_bit
+                # post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                # pos_distance = post_actv - org_post_actv
+
+                _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
+                self.forward_counter += 1
+
+                if self.estimate_method == 'forward':
+                    post_actv[:, i] = org_post_actv
+                    _, old_loss = self.obj_fn(return_loss_reduction='none')
+                    
+                    ZO_grad += (pos_loss - old_loss) / self.sigma * u
+
+                elif self.estimate_method == 'antithetic':
+                    post_actv[:, i] = org_post_actv
+                    post_actv[:, i] = post_actv[:, i] - u * self.sigma
+
+                    # a_bit = splited_block.block.a_bit
+                    # post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                    # neg_distance = org_post_actv - post_actv[:, i]
+                
+                    _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
+                    self.forward_counter += 1
+                    
+                    ZO_grad += (pos_loss - old_loss) / self.sigma * u
+
+                    post_actv[:, i] = org_post_actv
+              
+            ZO_grad = ZO_grad.view(post_actv_shape) / self.n_sample
+            mask = mask.view(post_actv_shape)
+
+
+        else:
+            raise NotImplementedError('Unknown sample method')
+        
+        if local_backward_args == True:
+            return ZO_grad, pre_activ, mask
+        else:
+            return ZO_grad
+
+    # def get_break_ZO_grad(self):
+    #     for i in range(len(self.trainable_splited_block_list)):
+    #         splited_block = self.trainable_splited_block_list[i]
+    #         with torch.no_grad():
+    #             ZO_grad = self.get_block_actv_ZO_gradint(splited_block)
+            
+    #         if i>0:
+    #             detach_idx = self.trainable_splited_block_list[i-1].idx
+    #         else:
+    #             detach_idx = None
+    #         output = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss', detach_idx=detach_idx)
+    #         # output.grad = ZO_grad
+    #         output.backward(ZO_grad)
+        
+    #     _, loss = self.obj_fn(detach_idx=self.trainable_splited_block_list[-1].idx)
+    #     loss.backward()
+        
+    #     return None
+
+    def get_break_ZO_grad(self):
+        for i in range(len(self.trainable_splited_block_list)):
+            splited_block = self.trainable_splited_block_list[i]
+
+            if splited_block.block.q_add is not None:
+                scale_y = splited_block.block.q_add.scale_y
+            else:
+                scale_y = splited_block.block.conv[-1].y_scale
+              
+            with torch.no_grad():
+                ZO_grad = self.get_block_actv_ZO_gradint(splited_block) * scale_y
+            
+            if i==0:
+                output = self.obj_fn(ending_idx=splited_block.idx+1, return_loss_reduction='no_loss') 
+            else:
+                output = self.obj_fn(starting_idx=self.trainable_splited_block_list[i-1].idx+1, ending_idx=splited_block.idx+1, input=output, return_loss_reduction='no_loss')
+            
+            output.backward(ZO_grad)
+            output = output.detach()
+        
+        _, loss = self.obj_fn(starting_idx=self.trainable_splited_block_list[-1].idx+1, input=output)
+        loss.backward()
+        
+        return None    
 
     def get_single_param_ZO_gradint(self, splited_block, param, block_in, old_loss, sigma, estimate_method, sample_method):
         param_dim = param.numel()
@@ -644,7 +803,7 @@ class ZO_Estim_MC(nn.Module):
         elif self.perturb_method == 'param':
             outputs, old_loss = self.obj_fn()
             self.estim_grads = self.get_param_ZO_gradient(old_loss)
-        
+      
         elif self.perturb_method == 'single':
             outputs, old_loss = self.obj_fn(row=-1)
             self.estim_grads = self.get_ZO_gradient_single(old_loss)

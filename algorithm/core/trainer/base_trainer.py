@@ -92,6 +92,8 @@ class BaseTrainer(object):
         val_info_dict = None
         for epoch in range(self.start_epoch, configs.run_config.n_epochs + configs.run_config.warmup_epochs):
             train_info_dict = self.train_one_epoch(epoch)
+            if configs.run_config.iteration_decay == 0:
+                self.lr_scheduler.step()
             logger.info(f'epoch {epoch}: f{train_info_dict}')
 
             if (epoch + 1) % configs.run_config.eval_per_epochs == 0 \

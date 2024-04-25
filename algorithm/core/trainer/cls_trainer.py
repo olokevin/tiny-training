@@ -13,8 +13,8 @@ from core.ZO_Estim.ZO_Estim_entry import build_obj_fn, split_model, split_named_
 from quantize.quantized_ops_diff import QuantizedMbBlockDiff as QuantizedMbBlock
 from quantize.quantized_ops_diff import _TruncateActivationRange
 
-DEBUG = None
-# DEBUG = True
+PARAM_GRAD_DEBUG = None
+# PARAM_GRAD_DEBUG = True
 
 OUT_GRAD_DEBUG = None
 # OUT_GRAD_DEBUG = True
@@ -81,74 +81,109 @@ class ClassificationTrainer(BaseTrainer):
                 #     # print the name and the size of the output
                 #     print(f'Output size: {x.size()}')
                 
-                if self.ZO_Estim is not None and configs.ZO_Estim.fc_bp == False:
-                    pass
-                else:
-                    if OUT_GRAD_DEBUG:
-                        splited_named_modules = split_named_model(self.model)
-                        for name, block in splited_named_modules.items():
-                            print(name, block)
-
-                        split_modules_list = split_model(self.model)
-                        print(split_modules_list)
-
-                        x = images
-                        activations = []
-                        for name, block in splited_named_modules.items():
-                            if type(block) == QuantizedMbBlock:
-                                idx=0
-                                out = block.conv[idx](x)
-                                activations.append((out, name+'.conv.0', block.conv[0]))
-                                for conv_layer in block.conv[1:]:
-                                    idx += 1
-                                    out = conv_layer(out)
-                                    activations.append((out, name+'.conv.'+str(idx), conv_layer))
-                                if block.q_add is not None:
-                                    if block.residual_conv is not None:
-                                        x = block.residual_conv(x)
-                                    out = block.q_add(x, out)
-                                    x = _TruncateActivationRange.apply(out, block.a_bit)
-                                else:
-                                    x = out
-                            else:
-                                x = block(x)
-
-                            activations.append((x, name, block))
-                        
-                        for (activation, name, layer) in activations:
-                            activation.register_hook(save_grad(layer))
-                        
-                        output = x
-                    else:
-                        output = self.model(images)
+                if self.ZO_Estim is None:
+                    output = self.model(images)
                     loss = self.criterion(output, labels)
                     # backward and update
                     loss.backward()
-
-                    if DEBUG:
-                        name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
-                        # FO_weight_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
-                        FO_bias_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].bias.grad.data
 
                     # partial update config
                     if configs.backward_config.enable_backward_config:
                         from core.utils.partial_backward import apply_backward_config
                         apply_backward_config(self.model, configs.backward_config)
-                
-                if self.ZO_Estim is not None:
-                    with torch.no_grad():
+                else:
+                    ##### break BP #####
+                    if configs.ZO_Estim.fc_bp == 'break_BP':
                         obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
                         self.ZO_Estim.update_obj_fn(obj_fn)
-                        output, loss, grads = self.ZO_Estim.estimate_grad()
+                        
+                        with torch.no_grad():
+                            output = self.model(images)
+                            loss = self.criterion(output, labels)
+                        
+                        self.ZO_Estim.get_break_ZO_grad()
+                    
+                    ##### partial BP #####
+                    elif configs.ZO_Estim.fc_bp == 'partial_BP':
+                        if OUT_GRAD_DEBUG:
+                            splited_named_modules = split_named_model(self.model)
+                            for name, block in splited_named_modules.items():
+                                print(name, block)
 
-                        self.ZO_Estim.update_grad()
+                            split_modules_list = split_model(self.model)
+                            print(split_modules_list)
 
-                        if DEBUG:
+                            x = images
+                            activations = []
+                            for name, block in splited_named_modules.items():
+                                if type(block) == QuantizedMbBlock:
+                                    idx=0
+                                    out = block.conv[idx](x)
+                                    activations.append((out, name+'.conv.0', block.conv[0]))
+                                    for conv_layer in block.conv[1:]:
+                                        idx += 1
+                                        out = conv_layer(out)
+                                        activations.append((out, name+'.conv.'+str(idx), conv_layer))
+                                    if block.q_add is not None:
+                                        if block.residual_conv is not None:
+                                            x = block.residual_conv(x)
+                                        out = block.q_add(x, out)
+                                        x = _TruncateActivationRange.apply(out, block.a_bit)
+                                    else:
+                                        x = out
+                                else:
+                                    x = block(x)
+
+                                activations.append((x, name, block))
+                            
+                            for (activation, name, layer) in activations:
+                                activation.register_hook(save_grad(layer))
+                            
+                            output = x
+                        else:
+                            output = self.model(images)
+                        # confirmed. the output is the same
+                        loss = self.criterion(output, labels)
+                        # backward and update
+                        loss.backward()
+
+                        if PARAM_GRAD_DEBUG:
                             name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
-                            # ZO_weight_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
-                            ZO_bias_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].bias.grad.data
+                            # FO_weight_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
+                            FO_bias_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].bias.grad.data
 
-                if DEBUG:
+                        # partial update config
+                        if configs.backward_config.enable_backward_config:
+                            from core.utils.partial_backward import apply_backward_config
+                            apply_backward_config(self.model, configs.backward_config)
+                        
+                        with torch.no_grad():
+                            obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
+                            self.ZO_Estim.update_obj_fn(obj_fn)
+                            output, loss, grads = self.ZO_Estim.estimate_grad()
+
+                            self.ZO_Estim.update_grad()
+
+                            if PARAM_GRAD_DEBUG:
+                                name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
+                                # ZO_weight_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
+                                ZO_bias_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].bias.grad.data
+                    
+                    ##### NO BP #####
+                    elif configs.ZO_Estim.fc_bp == False:
+                        with torch.no_grad():
+                            obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
+                            self.ZO_Estim.update_obj_fn(obj_fn)
+                            output, loss, grads = self.ZO_Estim.estimate_grad()
+
+                            self.ZO_Estim.update_grad()
+
+                            if PARAM_GRAD_DEBUG:
+                                name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
+                                # ZO_weight_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
+                                ZO_bias_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].bias.grad.data
+                
+                if PARAM_GRAD_DEBUG:
                     name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
                     this_layer = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])]
 
@@ -209,15 +244,16 @@ class ClassificationTrainer(BaseTrainer):
                 t.update()
 
                 # after step (NOTICE that lr changes every step instead of epoch)
-                self.lr_scheduler.step()
+                if configs.run_config.iteration_decay == 1:
+                    self.lr_scheduler.step()    
 
-                # if self.ZO_Estim is not None:
-                #     train_info_dict = {
-                #         'train/top1': train_top1.avg.item(),
-                #         'train/loss': train_loss.avg.item(),
-                #         'train/lr': self.optimizer.param_groups[0]['lr'],
-                #     }
-                #     logger.info(f'epoch:{epoch} batch:{batch_idx}: f{train_info_dict}')
+                if self.ZO_Estim is not None:
+                    train_info_dict = {
+                        'train/top1': train_top1.avg.item(),
+                        'train/loss': train_loss.avg.item(),
+                        'train/lr': self.optimizer.param_groups[0]['lr'],
+                    }
+                    logger.info(f'epoch:{epoch} batch:{batch_idx}: f{train_info_dict}')
         
         return {
             'train/top1': train_top1.avg.item(),

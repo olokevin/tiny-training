@@ -34,9 +34,11 @@ data_provider:
   base_batch_size: 64
 
 run_config:
-  # warmup_epochs: 0
+  warmup_epochs: 0
   # n_epochs: 3
-  bs256_lr: 0.04
+  bs256_lr: 0.01
+
+  iteration_decay: 0
 
   # optimizer
   # optimizer_name: sgd
@@ -55,7 +57,7 @@ net_config:
   net_name: mcunet-5fps
 
 backward_config:
-  quantize_gradient: 0
+  # quantize_gradient: 1
 
   # sparse update (100KB scheme): 88.84%
   # enable_backward_config: 1  
@@ -80,14 +82,17 @@ backward_config:
   # n_bias_update: 22
   # n_weight_update: 0
 
-  enable_backward_config: 1
-  n_bias_update: 0
-  n_weight_update: 0
+  # enable_backward_config: 1
+  # n_bias_update: 0
+  # n_weight_update: 0
+
+  enable_backward_config: 0
 
 ZO_Estim:
-  en: True
-  fc_bp: False
-  # fc_bp: True
+  # en: True
+  # fc_bp: False
+  fc_bp: 'partial_BP'
+  # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
   # sigma: 1
@@ -95,15 +100,18 @@ ZO_Estim:
   signSGD: False
 
   # trainable_param_list: all
-  trainable_param_list: ['effective_scale']
+  trainable_param_list: ['bias']
   # trainable_param_list: ['bias', 'effective_scale','zero_x','zero_y']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
   
   # trainable_layer_list: all
-  trainable_layer_list: first-21
+  trainable_layer_list: first-20
   # trainable_layer_list: last-30
-  # trainable_layer_list: ['1.13.conv.0']
+
+  # trainable_layer_list: ['1.8']
+  # trainable_layer_list: ['1.3', '1.6']
+  # trainable_layer_list: ['1.8.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
@@ -113,10 +121,10 @@ ZO_Estim:
   # quantize_method: u_fp-grad_fp
   # quantize_method: u_fp-grad_int
 
-  # sigma: 2000
+  # sigma: 10
   sigma: {
     'weight': 100,
-    'bias': 2000,
+    'bias': 100,
     'effective_scale': 0.001,
     'zero_x': 10,
     'zero_y': 10,
