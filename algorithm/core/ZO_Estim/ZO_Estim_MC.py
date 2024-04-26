@@ -79,7 +79,11 @@ class ZO_Estim_MC(nn.Module):
 
         if type(trainable_layer_list) is list:
             self.trainable_layer_list = trainable_layer_list
-        elif trainable_layer_list == 'all':
+        elif trainable_layer_list == 'block-all':
+            for splited_block in self.splited_block_list:
+                if type(splited_block.block) is QuantizedMbBlock:
+                    self.trainable_layer_list.append(splited_block.name)
+        elif trainable_layer_list == 'layer-all':
             for splited_block in self.splited_block_list:
                 if type(splited_block.block) is QuantizedMbBlock:
                     for conv_idx in range(len(splited_block.block.conv)):
@@ -378,6 +382,13 @@ class ZO_Estim_MC(nn.Module):
                 splited_block.block.bias.grad = torch.mean(ZO_grad, dim=0)
             elif splited_block.type == QuantizedMbBlock:
                 if conv_idx == None:
+                    grad_x = ZO_grad
+                    for idx in range(len(splited_block.block.conv)-1, -1, -1):
+                        layer_input = splited_block.block.conv[:idx](pre_activ)
+                        grad_x, grad_w, grad_bias = splited_block.block.conv[idx].local_backward(input=layer_input, grad_output=grad_x)
+                        splited_block.block.conv[idx].weight.grad = grad_w
+                        splited_block.block.conv[idx].bias.grad = grad_bias
+
                     if DEBUG:
                         FO_grad = splited_block.block.out_grad
                         FO_grad = FO_grad * mask
@@ -391,27 +402,12 @@ class ZO_Estim_MC(nn.Module):
                             scale_x = splited_block.block.conv[-1].x_scale
                             effective_scale = splited_block.block.conv[-1].effective_scale
 
+                        print('\nZO grad estimate')
+                        print('cos sim grad_output', F.cosine_similarity(FO_grad.view(-1), ZO_grad.view(-1), dim=0))
+                        
                         print('\nGrad Norm')
                         print('FO_grad:', torch.linalg.norm(FO_grad))
                         print('ZO_grad:', torch.linalg.norm(ZO_grad))
-
-                        print('\nZO grad estimate')
-                        print('cos sim grad_output', F.cosine_similarity(FO_grad.view(-1), ZO_grad.view(-1), dim=0))
-
-                        # normalize_FO_grad = F.normalize(FO_grad.view(batch_sz, -1), p=2, dim=1)
-                        # normalize_ZO_grad = F.normalize(ZO_grad.view(batch_sz, -1), p=2, dim=1)
-                        # relative_error = torch.norm(normalize_FO_grad - normalize_ZO_grad, dim=1).mean()
-                        # print('relative_error: ', relative_error)
-                        # print('relative_error / √d:', relative_error/math.sqrt(FO_grad.numel()))
-
-                        print('\nscaled grad')
-                        # print('FO_grad / scale_y:', torch.linalg.norm(FO_grad / scale_y))
-                        # print('FO_grad / scale_y**2:', torch.linalg.norm(FO_grad / scale_y**2))
-
-                        print('ZO_grad * scale_y:', torch.linalg.norm(ZO_grad * scale_y))
-                        print('ZO_grad * scale_x:', torch.linalg.norm(ZO_grad * scale_x))
-                        print('ZO_grad * effective_scale:', torch.linalg.norm(ZO_grad * effective_scale.view(1, -1, 1, 1).cuda()))
-
                 else:
                     effective_scale = splited_block.block.conv[conv_idx].effective_scale.view(1, -1, 1, 1).cuda()
                     # ZO_grad = ZO_grad * mask
@@ -451,10 +447,6 @@ class ZO_Estim_MC(nn.Module):
                         print('\n Grad Norm')
                         print('FO_grad:', torch.linalg.norm(FO_grad))
                         print('ZO_grad:', torch.linalg.norm(ZO_grad))
-                        print('FO_grad / effective_scale:', torch.linalg.norm(FO_grad / effective_scale))
-                        print('FO_grad / effective_scale**2:', torch.linalg.norm(FO_grad / effective_scale**2))
-                        print('ZO_grad * effective_scale:', torch.linalg.norm(ZO_grad * effective_scale))
-                        print('ZO_grad / effective_scale:', torch.linalg.norm(ZO_grad / effective_scale))
 
                     splited_block.block.conv[conv_idx].weight.grad = grad_w
                     splited_block.block.conv[conv_idx].bias.grad = grad_bias
@@ -535,7 +527,7 @@ class ZO_Estim_MC(nn.Module):
                 else:
                     raise NotImplementedError('Unknown estimate method')
             
-            ZO_grad = ZO_grad.view(post_actv_shape)
+            ZO_grad = (ZO_grad / batch_sz).view(post_actv_shape)
             mask = mask.view(post_actv_shape)
         else:
             raise NotImplementedError('Unknown sample method')
@@ -558,12 +550,14 @@ class ZO_Estim_MC(nn.Module):
 
         post_actv_shape = tuple(post_actv.shape)
         batch_sz = post_actv_shape[0]
-        post_actv = post_actv.view(batch_sz, -1)
-        mask = mask.view(batch_sz, -1)
 
         ZO_grad = torch.zeros_like(post_actv, device=self.device)
 
         if self.sample_method == 'coord_basis':
+            post_actv = post_actv.view(batch_sz, -1)
+            mask = mask.view(batch_sz, -1)
+            ZO_grad = ZO_grad.view(batch_sz, -1)
+
             for i in range(post_actv.shape[1]):
                 org_post_actv = post_actv[:, i].int()
 
@@ -608,10 +602,10 @@ class ZO_Estim_MC(nn.Module):
                 else:
                     raise NotImplementedError('Unknown estimate method')
             
-            ZO_grad = ZO_grad.view(post_actv_shape)
+            ZO_grad = (ZO_grad / batch_sz).view(post_actv_shape)
             mask = mask.view(post_actv_shape)
         elif self.sample_method == 'bernoulli':         
-            org_post_actv = post_actv[:, i].int()
+            org_post_actv = post_actv.int()
 
             for i in range(self.n_sample):
                 u = mask * self._sample_unit_sphere_quantized(post_actv_shape, self.sample_method, self.device)
@@ -626,30 +620,27 @@ class ZO_Estim_MC(nn.Module):
                 self.forward_counter += 1
 
                 if self.estimate_method == 'forward':
-                    post_actv[:, i] = org_post_actv
+                    post_actv = org_post_actv
                     _, old_loss = self.obj_fn(return_loss_reduction='none')
                     
-                    ZO_grad += (pos_loss - old_loss) / self.sigma * u
+                    ZO_grad += (pos_loss - old_loss).view(-1,1,1,1) / self.sigma * u
 
                 elif self.estimate_method == 'antithetic':
-                    post_actv[:, i] = org_post_actv
-                    post_actv[:, i] = post_actv[:, i] - u * self.sigma
+                    post_actv = org_post_actv
+                    post_actv = post_actv - u * self.sigma
 
                     # a_bit = splited_block.block.a_bit
                     # post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
-                    # neg_distance = org_post_actv - post_actv[:, i]
+                    # neg_distance = org_post_actv - post_actv
                 
                     _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
                     self.forward_counter += 1
                     
-                    ZO_grad += (pos_loss - old_loss) / self.sigma * u
+                    ZO_grad += (pos_loss - neg_loss).view(-1,1,1,1) / 2.0 / self.sigma * u
 
-                    post_actv[:, i] = org_post_actv
+                    post_actv = org_post_actv
               
-            ZO_grad = ZO_grad.view(post_actv_shape) / self.n_sample
-            mask = mask.view(post_actv_shape)
-
-
+            ZO_grad = ZO_grad / self.n_sample / batch_sz
         else:
             raise NotImplementedError('Unknown sample method')
         

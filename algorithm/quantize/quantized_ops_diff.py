@@ -127,13 +127,26 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         # weight = weight.int()  # - self.zero_w
         x = x - zero_x
 
-        if CONV_W_GRAD:
-            ctx.save_for_backward(weight, effective_scale, x)
-        else:
-            ctx.save_for_backward(weight, effective_scale)
+        # if CONV_W_GRAD:
+        #     ctx.save_for_backward(weight, effective_scale, x)
+        # else:
+        #     ctx.save_for_backward(weight, effective_scale)
 
         out = F.conv2d(x, weight, None, stride, padding, dilation, groups)
         out = round_tensor(out)  # ensure output is still int
+
+        from core.utils.config import configs
+        if configs.backward_config.train_scale:
+            if CONV_W_GRAD:
+                ctx.save_for_backward(weight, effective_scale, x, out)
+            else:
+                ctx.save_for_backward(weight, effective_scale)
+        else:
+            if CONV_W_GRAD:
+                ctx.save_for_backward(weight, effective_scale, x)
+            else:
+                ctx.save_for_backward(weight, effective_scale)
+
         # here we allow bias saved as fp32, and round to int during inference (keep fp32 copy in memory)
         out = out + bias.view(1, -1, 1, 1)  # Confirmed: we don't need to cast bias
         out = round_tensor(out * effective_scale.view(1, -1, 1, 1))
@@ -146,10 +159,23 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         # effective_scale = scale_x * scale_w / scale_y
         # b_quantized = b / (w_scales * x_scale), so we may wanna compute grad_b / (w_scale * x_scale)
         # which is grad_b / (effective_scale * scale_y)
-        if CONV_W_GRAD:
-            weight, effective_scale, _x = ctx.saved_tensors
+
+        # if CONV_W_GRAD:
+        #     weight, effective_scale, _x = ctx.saved_tensors
+        # else:
+        #     weight, effective_scale = ctx.saved_tensors
+        
+        from core.utils.config import configs
+        if configs.backward_config.train_scale:
+            if CONV_W_GRAD:
+                weight, effective_scale, _x, out = ctx.saved_tensors
+            else:
+                weight, effective_scale, out = ctx.saved_tensors
         else:
-            weight, effective_scale = ctx.saved_tensors
+            if CONV_W_GRAD:
+                weight, effective_scale, _x = ctx.saved_tensors
+            else:
+                weight, effective_scale = ctx.saved_tensors       
 
         grad_zero_y = grad_output.sum([0, 2, 3])
         _grad_conv_out = grad_output * effective_scale.view(1, -1, 1, 1)
@@ -168,6 +194,11 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         else:
             grad_w = None
 
+        if configs.backward_config.train_scale:
+            grad_effective_scale = (grad_output * out).sum([0, 2, 3])
+        else:
+            grad_effective_scale = None
+
         from core.utils.config import configs
         if configs.backward_config.quantize_gradient:  # perform per-channel quantization
             # quantize grad_x and grad_w
@@ -177,7 +208,7 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
             x_scales = get_weight_scales(grad_x.transpose(0, 1))
             grad_x = (grad_x / x_scales.view(1, -1, 1, 1)).round() * x_scales.view(1, -1, 1, 1)
 
-        return grad_x, grad_w, grad_bias, grad_zero_x, grad_zero_y, None, None, None, None, None
+        return grad_x, grad_w, grad_bias, grad_zero_x, grad_zero_y, grad_effective_scale, None, None, None, None
         # return grad_x, grad_w, grad_bias, None, None, None, None, None, None, None
         
 class QuantizedConv2dDiff(QuantizedConv2d):

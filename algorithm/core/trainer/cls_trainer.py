@@ -149,8 +149,13 @@ class ClassificationTrainer(BaseTrainer):
 
                         if PARAM_GRAD_DEBUG:
                             name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
-                            # FO_weight_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
-                            FO_bias_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].bias.grad.data
+                            if 'conv' in name_list:
+                                conv_idx = int(name_list[3])
+                            else:
+                                conv_idx = 2
+                            this_layer = self.model[int(name_list[0])][int(name_list[1])].conv[conv_idx]
+                            FO_weight_grad = this_layer.weight.grad.data
+                            FO_bias_grad = this_layer.bias.grad.data
 
                         # partial update config
                         if configs.backward_config.enable_backward_config:
@@ -165,9 +170,8 @@ class ClassificationTrainer(BaseTrainer):
                             self.ZO_Estim.update_grad()
 
                             if PARAM_GRAD_DEBUG:
-                                name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
-                                # ZO_weight_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
-                                ZO_bias_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].bias.grad.data
+                                ZO_weight_grad = this_layer.weight.grad.data
+                                ZO_bias_grad = this_layer.bias.grad.data
                     
                     ##### NO BP #####
                     elif configs.ZO_Estim.fc_bp == False:
@@ -177,50 +181,39 @@ class ClassificationTrainer(BaseTrainer):
                             output, loss, grads = self.ZO_Estim.estimate_grad()
 
                             self.ZO_Estim.update_grad()
-
-                            if PARAM_GRAD_DEBUG:
-                                name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
-                                # ZO_weight_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].weight.grad.data
-                                ZO_bias_grad = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])].bias.grad.data
                 
                 if PARAM_GRAD_DEBUG:
-                    name_list = self.ZO_Estim.trainable_layer_list[0].split('.')
-                    this_layer = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])]
 
-                    # w_scale = torch.tensor(this_layer.w_scale).view(-1, 1, 1, 1).cuda()
-                    # scale_FO_grad = FO_weight_grad / w_scale
-                    # scale_FO_grad_2 = FO_weight_grad / w_scale ** 2
-                    # scale_ZO_grad = ZO_weight_grad / w_scale
-                    # scale_ZO_grad_2 = ZO_weight_grad / w_scale ** 2
-                    # print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
+                    w_scale = this_layer.w_scale.view(-1, 1, 1, 1).cuda()
+                    scale_FO_grad = FO_weight_grad / w_scale
+                    scale_FO_grad_2 = FO_weight_grad / w_scale ** 2
+                    scale_ZO_grad = ZO_weight_grad / w_scale
+                    scale_ZO_grad_2 = ZO_weight_grad / w_scale ** 2
+                    print('\nWeight Norm')
+                    print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
+                    print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
                     # print('scale_FO_grad norm:', torch.linalg.norm(scale_FO_grad))
                     # print('scale_FO_grad_2 norm:', torch.linalg.norm(scale_FO_grad_2))
 
-                    # print('ZO_weight_grad norm:', torch.linalg.norm(ZO_weight_grad))
+                    print('ZO_weight_grad norm:', torch.linalg.norm(ZO_weight_grad))
                     # print('scale_ZO_grad norm:', torch.linalg.norm(scale_ZO_grad))
                     # print('scale_ZO_grad_2 norm:', torch.linalg.norm(scale_ZO_grad_2))
-                    
-                    # print('FO_weight_grad-ZO_weight_grad / √d:', torch.linalg.norm(FO_weight_grad-ZO_weight_grad)/math.sqrt(FO_weight_grad.numel()))
-                    # print('FO_weight_grad-ZO_weight_grad / FO_weight_grad / √d:', torch.linalg.norm(FO_weight_grad-ZO_weight_grad)/torch.linalg.norm(FO_weight_grad)/math.sqrt(FO_weight_grad.numel()))
-                    # print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
 
                     bias_scale = (this_layer.effective_scale.data * this_layer.y_scale)
                     scale_FO_grad = FO_bias_grad / bias_scale
                     scale_FO_grad_2 = FO_bias_grad / bias_scale ** 2
                     scale_ZO_grad = ZO_bias_grad / bias_scale
                     scale_ZO_grad_2 = ZO_bias_grad / bias_scale ** 2
+                    print('\nBias Norm')
+                    print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
                     print('FO_bias_grad norm:', torch.linalg.norm(FO_bias_grad))
-                    print('scale_FO_grad norm:', torch.linalg.norm(scale_FO_grad))
-                    print('scale_FO_grad_2 norm:', torch.linalg.norm(scale_FO_grad_2))
+                    # print('scale_FO_grad norm:', torch.linalg.norm(scale_FO_grad))
+                    # print('scale_FO_grad_2 norm:', torch.linalg.norm(scale_FO_grad_2))
 
                     print('ZO_bias_grad norm:', torch.linalg.norm(ZO_bias_grad))
-                    print('scale_ZO_grad norm:', torch.linalg.norm(scale_ZO_grad))
-                    print('scale_ZO_grad_2 norm:', torch.linalg.norm(scale_ZO_grad_2))
-                    
-                    print('FO_bias_grad-ZO_bias_grad / √d:', torch.linalg.norm(FO_bias_grad-ZO_bias_grad)/math.sqrt(FO_bias_grad.numel()))
-                    print('FO_bias_grad-ZO_bias_grad / FO_bias_grad / √d:', torch.linalg.norm(FO_bias_grad-ZO_bias_grad)/torch.linalg.norm(FO_bias_grad)/math.sqrt(FO_bias_grad.numel()))
-                    print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
-                        
+                    # print('scale_ZO_grad norm:', torch.linalg.norm(scale_ZO_grad))
+                    # print('scale_ZO_grad_2 norm:', torch.linalg.norm(scale_ZO_grad_2))
+
                 if hasattr(self.optimizer, 'pre_step'):  # for SGDScale optimizer
                     self.optimizer.pre_step(self.model)
 
