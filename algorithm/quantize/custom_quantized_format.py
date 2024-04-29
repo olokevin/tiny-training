@@ -61,6 +61,8 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
     # Note that these parameters are added for convenience, not actually needed
     conv.x_scale = to_pt(conv_cfg['params']['x_scale']).cuda()
     conv.y_scale = to_pt(conv_cfg['params']['y_scale']).cuda()
+    # conv.x_scale = (to_pt(conv_cfg['params']['x_scale'])*torch.ones(conv.out_channels)).cuda()
+    # conv.y_scale = (to_pt(conv_cfg['params']['y_scale'])*torch.ones(conv.out_channels)).cuda()
     conv.w_scale = to_pt(conv_cfg['params']['w_scales']).cuda()
     return conv
 

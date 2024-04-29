@@ -61,6 +61,7 @@ backward_config:  # for partial backward
   quantize_gradient: 0
   freeze_fc: 0
   train_scale: 0
+  train_zero: 0
 
   only_update_selected_bias: 0
 

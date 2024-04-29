@@ -1,8 +1,3 @@
-"""
-    Error propagation: w.r.t. fp32 activations, balanced backward conv
-"""
-
-import math
 import torch
 import torch.nn.functional as F
 from .quantized_ops import to_pt, QuantizedAvgPool, QuantizedConv2d, QuantizedElementwise, QuantizedMbBlock
@@ -77,14 +72,6 @@ class _QuantizedElementwiseAddFunc(torch.autograd.Function):
         grad_zero_x1 = - grad_x1.sum([0, 2, 3])
         grad_zero_x2 = - grad_x2.sum([0, 2, 3])
         return grad_x1, grad_x2, grad_zero_x1, grad_zero_x2, grad_zero_y, None, None, None
-    
-    # @staticmethod
-    # def backward(ctx, grad_output):
-    #     grad_x1 = grad_output
-    #     grad_x2 = grad_output
-    #     return grad_x1, grad_x2, None, None, None, None, None, None
-    
-
 
 
 class QuantizedElementwiseDiff(QuantizedElementwise):
@@ -110,6 +97,15 @@ class _TruncateActivationRange(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
+        # if len(ctx.saved_tensors) == 1:
+        #     binary_mask, = ctx.saved_tensors
+        #     grad_x = grad_output * binary_mask
+        # elif len(ctx.saved_tensors) == 2:
+        #     binary_mask, ZO_grad_output = ctx.saved_tensors
+        #     grad_x = ZO_grad_output * binary_mask
+            
+        # return grad_x, None, None
+        
         binary_mask, = ctx.saved_tensors
         grad_x = grad_output * binary_mask
         return grad_x, None
@@ -117,7 +113,7 @@ class _TruncateActivationRange(torch.autograd.Function):
 
 class _QuantizedConv2dFunc(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias, zero_x, zero_y, effective_scale, x_scale, y_scale, w_scale, stride, padding, dilation, groups):
+    def forward(ctx, x, weight, bias, zero_x, zero_y, effective_scale, stride, padding, dilation, groups):
         x = x.round()  # ensure x is int
         weight = weight.round()  # ensure weight is int
 
@@ -131,13 +127,26 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         # weight = weight.int()  # - self.zero_w
         x = x - zero_x
 
-        if CONV_W_GRAD:
-            ctx.save_for_backward(weight, effective_scale, x_scale, y_scale, w_scale, x)
-        else:
-            ctx.save_for_backward(weight, effective_scale, x_scale, y_scale, w_scale)
+        # if CONV_W_GRAD:
+        #     ctx.save_for_backward(weight, effective_scale, x)
+        # else:
+        #     ctx.save_for_backward(weight, effective_scale)
 
         out = F.conv2d(x, weight, None, stride, padding, dilation, groups)
         out = round_tensor(out)  # ensure output is still int
+
+        from core.utils.config import configs
+        if configs.backward_config.train_scale:
+            if CONV_W_GRAD:
+                ctx.save_for_backward(weight, effective_scale, x, out)
+            else:
+                ctx.save_for_backward(weight, effective_scale)
+        else:
+            if CONV_W_GRAD:
+                ctx.save_for_backward(weight, effective_scale, x)
+            else:
+                ctx.save_for_backward(weight, effective_scale)
+
         # here we allow bias saved as fp32, and round to int during inference (keep fp32 copy in memory)
         out = out + bias.view(1, -1, 1, 1)  # Confirmed: we don't need to cast bias
         out = round_tensor(out * effective_scale.view(1, -1, 1, 1))
@@ -150,17 +159,28 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         # effective_scale = scale_x * scale_w / scale_y
         # b_quantized = b / (w_scales * x_scale), so we may wanna compute grad_b / (w_scale * x_scale)
         # which is grad_b / (effective_scale * scale_y)
-        if CONV_W_GRAD:
-            weight, effective_scale, x_scale, y_scale, w_scale, _x = ctx.saved_tensors
+
+        # if CONV_W_GRAD:
+        #     weight, effective_scale, _x = ctx.saved_tensors
+        # else:
+        #     weight, effective_scale = ctx.saved_tensors
+        
+        from core.utils.config import configs
+        if configs.backward_config.train_scale:
+            if CONV_W_GRAD:
+                weight, effective_scale, _x, out = ctx.saved_tensors
+            else:
+                weight, effective_scale, out = ctx.saved_tensors
         else:
-            weight, effective_scale, x_scale, y_scale, w_scale = ctx.saved_tensors
+            if CONV_W_GRAD:
+                weight, effective_scale, _x = ctx.saved_tensors
+            else:
+                weight, effective_scale = ctx.saved_tensors       
 
         grad_zero_y = grad_output.sum([0, 2, 3])
-        # _grad_conv_out = grad_output * effective_scale.view(1, -1, 1, 1)
-        _grad_conv_out = grad_output
-        grad_bias = _grad_conv_out.sum([0, 2, 3]) * x_scale * w_scale
-
-        weight = weight * w_scale.view(-1, 1, 1, 1)
+        _grad_conv_out = grad_output * effective_scale.view(1, -1, 1, 1)
+        # _grad_conv_out = grad_output
+        grad_bias = _grad_conv_out.sum([0, 2, 3])
         _grad_conv_in = torch.nn.grad.conv2d_input(ctx.input_size, weight, _grad_conv_out,
                                                    stride=ctx.stride, padding=ctx.padding,
                                                    dilation=ctx.dilation, groups=ctx.groups)
@@ -168,24 +188,18 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         grad_x = _grad_conv_in
 
         if CONV_W_GRAD:
-            _x = _x * x_scale
             grad_w = torch.nn.grad.conv2d_weight(_x, ctx.weight_size, _grad_conv_out,
                                                  stride=ctx.stride, padding=ctx.padding,
                                                  dilation=ctx.dilation, groups=ctx.groups)
         else:
             grad_w = None
 
-        from core.utils.config import configs
         if configs.backward_config.train_scale:
-            grad_x_scale = (grad_x * _x).sum(0)
-            grad_y_scale = None
-            grad_w_scale = (grad_w * weight).sum([0, 2, 3])
-            
+            grad_effective_scale = (grad_output * out).sum([0, 2, 3])
         else:
-            grad_x_scale = None
-            grad_y_scale = None
-            grad_w_scale = None
+            grad_effective_scale = None
 
+        from core.utils.config import configs
         if configs.backward_config.quantize_gradient:  # perform per-channel quantization
             # quantize grad_x and grad_w
             from .quantize_helper import get_weight_scales
@@ -194,14 +208,15 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
             x_scales = get_weight_scales(grad_x.transpose(0, 1))
             grad_x = (grad_x / x_scales.view(1, -1, 1, 1)).round() * x_scales.view(1, -1, 1, 1)
 
-        return grad_x, grad_w, grad_bias, grad_zero_x, grad_zero_y, grad_x_scale, grad_y_scale, grad_w_scale, None, None, None, None, None
-
+        return grad_x, grad_w, grad_bias, grad_zero_x, grad_zero_y, grad_effective_scale, None, None, None, None
+        # return grad_x, grad_w, grad_bias, None, None, None, None, None, None, None
+        
 class QuantizedConv2dDiff(QuantizedConv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros',
                  zero_x=0, zero_w=0, zero_y=0,  # keep same args
-                 w_bit=8, a_bit=None,
                  effective_scale=None,
+                 w_bit=8, a_bit=None,
                  ):
         super(QuantizedConv2d, self).__init__(in_channels, out_channels, kernel_size, stride,
                                               padding, dilation, groups, bias, padding_mode)
@@ -220,7 +235,6 @@ class QuantizedConv2dDiff(QuantizedConv2d):
     
     def forward(self, x):
         out = _QuantizedConv2dFunc.apply(x, self.weight, self.bias, self.zero_x, self.zero_y, self.effective_scale,
-                                         self.x_scale, self.y_scale, self.w_scale,
                                          self.stride, self.padding, self.dilation, self.groups)
         self.binary_mask = (- 2 ** (self.a_bit - 1) <= out) & (out <= 2 ** (self.a_bit - 1) - 1)
         # self.OOR_mask = out > 2 ** (self.a_bit - 1) - 1
@@ -275,30 +289,26 @@ class QuantizedMbBlockDiff(QuantizedMbBlock):
         if self.q_add is not None:
             if self.residual_conv is not None:
                 x = self.residual_conv(x)
-            out = self.q_add(x, out)     
+            out = self.q_add(x, out)
+
+            # if hasattr(self, 'en_ZO_grad_out') and self.en_ZO_grad_out:
+            #     self.binary_mask = (- 2 ** (self.a_bit - 1) <= out) & (out <= 2 ** (self.a_bit - 1) - 1)
+            #     with torch.no_grad():
+            #         ZO_grad_output = self.ZO_Estim.get_single_actv_ZO_gradint(block=self)
+            #     self.en_ZO_grad_out = False
+            #     return _TruncateActivationRange.apply(out, self.a_bit, ZO_grad_output=ZO_grad_output)
+            # else:
+            #     return _TruncateActivationRange.apply(out, self.a_bit)
+            
             self.binary_mask = (- 2 ** (self.a_bit - 1) <= out) & (out <= 2 ** (self.a_bit - 1) - 1)
             return _TruncateActivationRange.apply(out, self.a_bit)
         else:
             self.binary_mask = torch.ones_like(out, dtype=torch.bool)
             return out
-
-class _ScaledLinearFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, weight, bias, zero_x, scale_x):
-        x = (x - zero_x.view(1, -1)) * scale_x.view(1, -1)
-        ctx.save_for_backward(x, weight, bias)
-        output = F.linear(x, weight, bias)
-        return output
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        input, weight, bias = ctx.saved_tensors
-
-        grad_x = grad_output @ weight
-        grad_w = grad_output.t() @ input
-        grad_bias = grad_output.sum(0)
-
-        return grad_x, grad_w, grad_bias, None, None
+    
+    # def enable_ZO_grad(self, ZO_Estim):
+    #     self.en_ZO_grad_out = True
+    #     self.ZO_Estim = ZO_Estim
 
 class ScaledLinear(torch.nn.Linear):
     # a fp version of fc used for training
@@ -314,31 +324,12 @@ class ScaledLinear(torch.nn.Linear):
             self.eps = 1e-5
 
     def forward(self, x):
+        x = (x.squeeze(-1).squeeze(-1) - self.zero_x.detach().view(1, -1)) * self.scale_x.detach().view(1, -1)
         if self.norm_feat:
-            raise NotImplementedError('Not implemented norm_feat backward yet')
+            x_norm = x.div(torch.norm(x, p=2, dim=1).view(-1, 1) + self.eps)
+            weight_norm = self.weight.div(torch.norm(self.weight, p=2, dim=1).view(-1, 1) + self.eps)
+            cos_dist = (x_norm @ weight_norm.T) * self.bias.view(1, -1)
+            return cos_dist
         else:
-            x = x.squeeze(-1).squeeze(-1)
-            return _ScaledLinearFunction.apply(x, self.weight, self.bias, self.zero_x, self.scale_x)
+            return super().forward(x)
 
-# class ScaledLinear(torch.nn.Linear):
-#     # a fp version of fc used for training
-#     def __init__(self, in_features: int, out_features: int, scale_x, zero_x, bias: bool = True,
-#                  device=None, dtype=None, norm_feat=False):
-#         super().__init__(in_features, out_features, bias, device, dtype)
-#         self.register_buffer('scale_x', to_pt(scale_x))
-#         self.register_buffer('zero_x', to_pt(zero_x))
-
-#         self.norm_feat = norm_feat
-#         if norm_feat:
-#             self.bias.data.fill_(2.)
-#             self.eps = 1e-5
-
-#     def forward(self, x):
-#         x = (x.squeeze(-1).squeeze(-1) - self.zero_x.detach().view(1, -1)) * self.scale_x.detach().view(1, -1)
-#         if self.norm_feat:
-#             x_norm = x.div(torch.norm(x, p=2, dim=1).view(-1, 1) + self.eps)
-#             weight_norm = self.weight.div(torch.norm(self.weight, p=2, dim=1).view(-1, 1) + self.eps)
-#             cos_dist = (x_norm @ weight_norm.T) * self.bias.view(1, -1)
-#             return cos_dist
-#         else:
-#             return super().forward(x)

@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from .quantized_ops import to_pt, QuantizedAvgPool, QuantizedConv2d, QuantizedElementwise, QuantizedMbBlock
+from core.utils.config import configs
 
 QUANTIZED_GRADIENT = False
 ROUNDING = 'round'
@@ -79,6 +80,9 @@ class QuantizedElementwiseDiff(QuantizedElementwise):
         super().__init__(operator, zero_x1, zero_x2, zero_y, scale_x1, scale_x2, scale_y)
         assert self.operator == 'add'  # for mult, we do not support bias-only update
 
+        # if configs.backward_config.train_scale:
+            
+
     def forward(self, x1, x2):
         return _QuantizedElementwiseAddFunc.apply(x1, x2,
                                                   self.zero_x1, self.zero_x2, self.zero_y,
@@ -113,7 +117,7 @@ class _TruncateActivationRange(torch.autograd.Function):
 
 class _QuantizedConv2dFunc(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias, zero_x, zero_y, effective_scale, stride, padding, dilation, groups):
+    def forward(ctx, x, weight, bias, zero_x, zero_y, effective_scale, x_scale, w_scale, stride, padding, dilation, groups):
         x = x.round()  # ensure x is int
         weight = weight.round()  # ensure weight is int
 
@@ -135,12 +139,11 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         out = F.conv2d(x, weight, None, stride, padding, dilation, groups)
         out = round_tensor(out)  # ensure output is still int
 
-        from core.utils.config import configs
         if configs.backward_config.train_scale:
             if CONV_W_GRAD:
-                ctx.save_for_backward(weight, effective_scale, x, out)
+                ctx.save_for_backward(weight, effective_scale, x, out, x_scale, w_scale)
             else:
-                ctx.save_for_backward(weight, effective_scale)
+                ctx.save_for_backward(weight, effective_scale, out, x_scale, w_scale)
         else:
             if CONV_W_GRAD:
                 ctx.save_for_backward(weight, effective_scale, x)
@@ -165,12 +168,11 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         # else:
         #     weight, effective_scale = ctx.saved_tensors
         
-        from core.utils.config import configs
         if configs.backward_config.train_scale:
             if CONV_W_GRAD:
-                weight, effective_scale, _x, out = ctx.saved_tensors
+                weight, effective_scale, _x, out, x_scale, w_scale = ctx.saved_tensors
             else:
-                weight, effective_scale, out = ctx.saved_tensors
+                weight, effective_scale, out, x_scale, w_scale = ctx.saved_tensors
         else:
             if CONV_W_GRAD:
                 weight, effective_scale, _x = ctx.saved_tensors
@@ -178,6 +180,7 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
                 weight, effective_scale = ctx.saved_tensors       
 
         grad_zero_y = grad_output.sum([0, 2, 3])
+
         _grad_conv_out = grad_output * effective_scale.view(1, -1, 1, 1)
         # _grad_conv_out = grad_output
         grad_bias = _grad_conv_out.sum([0, 2, 3])
@@ -195,11 +198,13 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
             grad_w = None
 
         if configs.backward_config.train_scale:
-            grad_effective_scale = (grad_output * out).sum([0, 2, 3])
+            grad_x_scale = (grad_output * out).sum([0, 2, 3]) * effective_scale / x_scale
+            grad_w_scale = (grad_output * out).sum([0, 2, 3]) * effective_scale / w_scale
         else:
-            grad_effective_scale = None
+            grad_x_scale = None
+            grad_w_scale = None
 
-        from core.utils.config import configs
+        
         if configs.backward_config.quantize_gradient:  # perform per-channel quantization
             # quantize grad_x and grad_w
             from .quantize_helper import get_weight_scales
@@ -208,7 +213,7 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
             x_scales = get_weight_scales(grad_x.transpose(0, 1))
             grad_x = (grad_x / x_scales.view(1, -1, 1, 1)).round() * x_scales.view(1, -1, 1, 1)
 
-        return grad_x, grad_w, grad_bias, grad_zero_x, grad_zero_y, grad_effective_scale, None, None, None, None
+        return grad_x, grad_w, grad_bias, grad_zero_x, None, None, grad_x_scale, grad_w_scale, None, None, None, None
         # return grad_x, grad_w, grad_bias, None, None, None, None, None, None, None
         
 class QuantizedConv2dDiff(QuantizedConv2d):
@@ -223,18 +228,33 @@ class QuantizedConv2dDiff(QuantizedConv2d):
         self.register_buffer('zero_x', to_pt(zero_x))
         # self.register_buffer('zero_w', to_pt(zero_w))
         self.register_buffer('zero_y', to_pt(zero_y))
-        from core.utils.config import configs
+
         if configs.backward_config.train_scale:
             print('Note: the scale is also trained...')
             self.register_parameter('effective_scale', torch.nn.Parameter(effective_scale))
         else:
             self.register_buffer('effective_scale', effective_scale)
 
+        # if configs.backward_config.train_scale:
+        #     # print('Note: the scale is also trained...')
+        #     self.register_parameter('x_scale', torch.nn.Parameter(None))
+        #     self.register_parameter('w_scale', torch.nn.Parameter(None))
+        # else:
+        #     self.register_buffer('x_scale', None)
+        #     self.register_buffer('w_scale', None)
+        
+        # if configs.backward_config.train_zero:
+        #     # print('Note: the scale is also trained...')
+        #     self.register_parameter('zero_x', torch.nn.Parameter(zero_x))
+        # else:
+        #     self.register_buffer('zero_x', zero_x)
+
         self.w_bit = w_bit
         self.a_bit = a_bit if a_bit is not None else w_bit
     
     def forward(self, x):
         out = _QuantizedConv2dFunc.apply(x, self.weight, self.bias, self.zero_x, self.zero_y, self.effective_scale,
+                                         self.x_scale, self.w_scale,
                                          self.stride, self.padding, self.dilation, self.groups)
         self.binary_mask = (- 2 ** (self.a_bit - 1) <= out) & (out <= 2 ** (self.a_bit - 1) - 1)
         # self.OOR_mask = out > 2 ** (self.a_bit - 1) - 1
@@ -271,7 +291,6 @@ class QuantizedConv2dDiff(QuantizedConv2d):
         else:
             grad_w = None
 
-        from core.utils.config import configs
         if configs.backward_config.quantize_gradient:  # perform per-channel quantization
             # quantize grad_x and grad_w
             from .quantize_helper import get_weight_scales
@@ -289,26 +308,39 @@ class QuantizedMbBlockDiff(QuantizedMbBlock):
         if self.q_add is not None:
             if self.residual_conv is not None:
                 x = self.residual_conv(x)
-            out = self.q_add(x, out)
-
-            # if hasattr(self, 'en_ZO_grad_out') and self.en_ZO_grad_out:
-            #     self.binary_mask = (- 2 ** (self.a_bit - 1) <= out) & (out <= 2 ** (self.a_bit - 1) - 1)
-            #     with torch.no_grad():
-            #         ZO_grad_output = self.ZO_Estim.get_single_actv_ZO_gradint(block=self)
-            #     self.en_ZO_grad_out = False
-            #     return _TruncateActivationRange.apply(out, self.a_bit, ZO_grad_output=ZO_grad_output)
-            # else:
-            #     return _TruncateActivationRange.apply(out, self.a_bit)
-            
+            out = self.q_add(x, out)     
             self.binary_mask = (- 2 ** (self.a_bit - 1) <= out) & (out <= 2 ** (self.a_bit - 1) - 1)
             return _TruncateActivationRange.apply(out, self.a_bit)
         else:
             self.binary_mask = torch.ones_like(out, dtype=torch.bool)
             return out
     
-    # def enable_ZO_grad(self, ZO_Estim):
-    #     self.en_ZO_grad_out = True
-    #     self.ZO_Estim = ZO_Estim
+    # def layerwise_update_quantize_params(self, conv_idx, input_scale, input_zero_y):
+    #     try:
+    #         self.conv[conv_idx+1].x_scale = self.conv[conv_idx].y_scale * 1.0
+    #     except:
+    #         if self.q_add is not None:
+    #             self.q_add.scale_x2 = self.conv[conv_idx].y_scale * 1.0
+    #             self.get_single_param_ZO_gradient(self, 'q_add', block_in, old_loss, self.sigma, self.estimate_method, self.sample_method)
+    #             self.splited_block_list[splited_block.idx+1]
+    
+    def blockwise_update_quantize_params(self, input_scale, input_zero_y):
+        self.conv[0].x_scale = input_scale
+        self.conv[0].zero_x = input_zero_y
+        for conv_idx in range(1, len(self.conv)):
+            self.conv[conv_idx].x_scale = self.conv[conv_idx-1].y_scale
+            self.conv[conv_idx].zero_x = self.conv[conv_idx-1].zero_y
+        if self.q_add is not None:
+            self.q_add.scale_x1 = input_scale
+            self.q_add.zero_x1 = input_zero_y
+            
+            self.q_add.scale_x2 = self.conv[-1].y_scale
+            self.q_add.zero_x2 = self.conv[-1].zero_y
+
+            return self.q_add.scale_y, self.q_add.zero_y
+        else:
+            return self.conv[-1].y_scale, self.conv[-1].zero_y
+            
 
 class ScaledLinear(torch.nn.Linear):
     # a fp version of fc used for training
