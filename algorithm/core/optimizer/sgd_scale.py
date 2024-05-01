@@ -20,10 +20,10 @@ class SGDScale(torch.optim.SGD):
         for m in model.modules():
             if isinstance(m, QuantizedConv2dDiff):
                 if m.bias.grad is not None:
-                    m.bias.grad.data = m.bias.grad.data / (m.effective_scale.data * m.y_scale) ** 2
+                    m.bias.grad.data = m.bias.grad.data / (m.effective_scale.data * m.scale_y) ** 2
                 if m.weight.grad is not None:
-                    w_scale = m.effective_scale.data * m.y_scale / m.x_scale
-                    m.weight.grad.data = m.weight.grad.data / w_scale.view(-1, 1, 1, 1) ** 2
+                    scale_w = m.effective_scale.data * m.scale_y / m.scale_x
+                    m.weight.grad.data = m.weight.grad.data / scale_w.view(-1, 1, 1, 1) ** 2
 
 class SGDScaleInt(torch.optim.SGD):
     @staticmethod
@@ -34,10 +34,10 @@ class SGDScaleInt(torch.optim.SGD):
         for m in model.modules():
             if isinstance(m, QuantizedConv2dDiff):
                 if m.bias.grad is not None:
-                    m.bias.grad.data = m.bias.grad.data / (m.effective_scale.data * m.y_scale) ** 2
+                    m.bias.grad.data = m.bias.grad.data / (m.effective_scale.data * m.scale_y) ** 2
                 if m.weight.grad is not None:
-                    w_scale = m.effective_scale.data * m.y_scale / m.x_scale
-                    m.weight.grad.data = m.weight.grad.data / w_scale.view(-1, 1, 1, 1) ** 2
+                    scale_w = m.effective_scale.data * m.scale_y / m.scale_x
+                    m.weight.grad.data = m.weight.grad.data / scale_w.view(-1, 1, 1, 1) ** 2
     
     @staticmethod
     def post_step(model):

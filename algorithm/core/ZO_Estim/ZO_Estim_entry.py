@@ -95,6 +95,9 @@ def build_obj_fn_classifier_layerwise(data, target, model, criterion):
             assert input is not None
             y = input
         
+        if detach_idx is not None and detach_idx < 0:
+            detach_idx = len(split_modules_list) + detach_idx
+        
         for i in range(starting_idx, ending_idx):
             y = split_modules_list[i](y)
             if detach_idx is not None and i == detach_idx:

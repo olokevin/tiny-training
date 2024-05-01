@@ -8,7 +8,7 @@ data_provider:
   root: /home/yequan/dataset/stanford_car
   num_classes: 196
   # Last only
-  load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240418-184445-2021615/checkpoint/ckpt.best.pth'
+  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240418-184445-2021615/checkpoint/ckpt.best.pth'
   # 7.0
   # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240417-001040-1964541/checkpoint/ckpt.best.pth'
   # 12+13
@@ -36,7 +36,7 @@ data_provider:
 run_config:
   # warmup_epochs: 0
   # n_epochs: 3
-  bs256_lr: 0.01
+  bs256_lr: 0.1
 
   iteration_decay: 0
 
@@ -59,7 +59,9 @@ net_config:
 
 backward_config:
   # quantize_gradient: 1
-  # train_scale: 1
+
+  train_scale: 1
+  # train_zero: 1
 
   # sparse update (100KB scheme): 88.84%
   # enable_backward_config: 1  
@@ -93,85 +95,91 @@ backward_config:
 ZO_Estim:
   en: True
   # fc_bp: False
-  fc_bp: 'partial_BP'
+  fc_bp: cls_only
+  # fc_bp: 'partial_BP'
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  # sigma: 1
-  n_sample: 3072
-  signSGD: False
+  n_sample: 1
+  signSGD: True
 
   # trainable_param_list: all
-  trainable_param_list: ['y_scale, zero_y']
-  # trainable_param_list: ['bias', 'y_scale','zero_y','w_scale']
+  # trainable_param_list: ['bias']
+  trainable_param_list: ['scale_y']
+  # trainable_param_list: ['bias', 'scale_y','zero_y','scale_w']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
   
-  # trainable_layer_list: block-all
+  trainable_layer_list: block-all
   # trainable_layer_list: layer-all
   # trainable_layer_list: layer-first-20
   # trainable_layer_list: layer-last-30
 
-  trainable_layer_list: ['1.8']
+  # trainable_layer_list: ['1.8']
   # trainable_layer_list: ['1.3', '1.6']
   # trainable_layer_list: ['1.8.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
-  
-  # quantize_method: None
-  # sigma: 0.01
-  # quantize_method: u_fp-grad_fp
-  # quantize_method: u_fp-grad_int
-
-  sigma: 100
-  # sigma: {
-  #   'weight': 100,
-  #   'bias': 100,
-  #   'y_scale': 0.0001,
-  #   'zero_y': 10,
-  #   'w_scale': 0.0001,
-  # }
-
-  param_lr:  {
-    'y_scale': 0.0001,
-    'zero_y': 1,
-    'w_scale': 0.0001,
-  }
-
-  quantize_method: u_int-grad_fp
-  # quantize_method: u_int-grad_int
-
-  mask_method: None
-  # mask_method: block-30
-  # mask_method: layer
 
   # estimate_method: forward
   estimate_method: antithetic
-
-  obj_fn_type: classifier_layerwise
-  perturb_method: activation
-
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: param
-
-  # param_update_method: layerwise
-  # param_update_method: blockwise
-  # param_update_method: modelwise
-
-  # obj_fn_type: classifier
-  # perturb_method: batch
-  
-  # obj_fn_type: classifier_row
-  # perturb_method: single
 
   # sample_method: uniform
   # sample_method: gaussian
   # sample_method: bernoulli
   sample_method: coord_basis
 
+  ############################## Activation Perturbation ##############################
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: activation
+
+  # sigma: 100
+
   # sync_batch_perturb: 0
-  sync_batch_perturb: 1
+  # sync_batch_perturb: 1
+
+  ############################## Param Perturbation ##############################
+  obj_fn_type: classifier_layerwise
+  perturb_method: param
+
+  sigma: {
+    'weight': 100,
+    'bias': 100,
+    'scale_y': 0.01,
+    'zero_y': 10,
+    'scale_w': 0.01,
+  }
+
+  # param_update_method: layerwise
+  # param_update_method: blockwise
+  param_update_method: modelwise
+
+  param_lr:  {
+    'scale_y': 0.1,
+    'zero_y': 1,
+    'scale_w': 0.01,
+  }
+
+  ############################## Weight Perturbation ##############################
+  # obj_fn_type: classifier
+  # perturb_method: batch
+  
+  # obj_fn_type: classifier_row
+  # perturb_method: single
+
+  # quantize_method: None
+  # sigma: 0.01
+  # quantize_method: u_fp-grad_fp
+  # quantize_method: u_fp-grad_int
+
+  # sigma: 1
+  quantize_method: u_int-grad_fp
+  # quantize_method: u_int-grad_int
+
+  mask_method: None
+  # mask_method: block-30
+  # mask_method: layer
 
   prior_method: None
   # prior_method: last_grad_perturb

@@ -36,18 +36,34 @@ def get_effective_scale(scale_x, scale_w, scale_y):
 
 
 def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
+    # kwargs = {
+    #     'zero_x': to_pt(conv_cfg['params']['x_zero']) * torch.ones(conv_cfg['in_channel']),
+    #     'zero_w': to_pt(0),
+    #     'zero_y': to_pt(conv_cfg['params']['y_zero']) * torch.ones(conv_cfg['out_channel']),
+    #     'x_scale': to_pt(conv_cfg['params']['x_scale']) * torch.ones(conv_cfg['in_channel']),
+    #     'w_scale': to_pt(conv_cfg['params']['w_scales']),
+    #     'y_scale': to_pt(conv_cfg['params']['y_scale']) * torch.ones(conv_cfg['out_channel'])
+    # }
+
     kwargs = {
         'zero_x': to_pt(conv_cfg['params']['x_zero']),
         'zero_w': to_pt(0),
         'zero_y': to_pt(conv_cfg['params']['y_zero']),
+        'scale_x': to_pt(conv_cfg['params']['x_scale']),
+        'scale_w': to_pt(conv_cfg['params']['w_scales']),
+        'scale_y': to_pt(conv_cfg['params']['y_scale'])
     }
 
-    if USE_FP_SCALE:
-        effective_scale = get_effective_scale(conv_cfg['params']['x_scale'], conv_cfg['params']['w_scales'],
-                                              conv_cfg['params']['y_scale'])
-        kwargs['effective_scale'] = to_pt(effective_scale).cuda()
-    else:
-        raise NotImplementedError
+    for name, param in kwargs.items():
+        param = param.cuda()
+
+    # if USE_FP_SCALE:
+    #     effective_scale = get_effective_scale(conv_cfg['params']['x_scale'], conv_cfg['params']['w_scales'],
+    #                                           conv_cfg['params']['y_scale'])
+    #     kwargs['effective_scale'] = to_pt(effective_scale).cuda()
+    # else:
+    #     raise NotImplementedError
+    
     if isinstance(conv_cfg['kernel_size'], int):  # make tuple
         conv_cfg['kernel_size'] = (conv_cfg['kernel_size'],) * 2
     padding = ((conv_cfg['kernel_size'][0] - 1) // 2, (conv_cfg['kernel_size'][1] - 1) // 2)
@@ -58,13 +74,38 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
     # load pretrained data
     conv.weight.data = to_pt(conv_cfg['params']['weight'])
     conv.bias.data = to_pt(conv_cfg['params']['bias'])
-    # Note that these parameters are added for convenience, not actually needed
-    conv.x_scale = to_pt(conv_cfg['params']['x_scale']).cuda()
-    conv.y_scale = to_pt(conv_cfg['params']['y_scale']).cuda()
-    # conv.x_scale = (to_pt(conv_cfg['params']['x_scale'])*torch.ones(conv.out_channels)).cuda()
-    # conv.y_scale = (to_pt(conv_cfg['params']['y_scale'])*torch.ones(conv.out_channels)).cuda()
-    conv.w_scale = to_pt(conv_cfg['params']['w_scales']).cuda()
+
+    conv.effective_scale = to_pt(get_effective_scale(conv_cfg['params']['x_scale'], conv_cfg['params']['w_scales'],conv_cfg['params']['y_scale'])).cuda()
     return conv
+
+# def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
+#     kwargs = {
+#         'zero_x': to_pt(conv_cfg['params']['x_zero']),
+#         'zero_w': to_pt(0),
+#         'zero_y': to_pt(conv_cfg['params']['y_zero']),
+#     }
+
+#     if USE_FP_SCALE:
+#         effective_scale = get_effective_scale(conv_cfg['params']['x_scale'], conv_cfg['params']['w_scales'],
+#                                               conv_cfg['params']['y_scale'])
+#         kwargs['effective_scale'] = to_pt(effective_scale).cuda()
+#     else:
+#         raise NotImplementedError
+#     if isinstance(conv_cfg['kernel_size'], int):  # make tuple
+#         conv_cfg['kernel_size'] = (conv_cfg['kernel_size'],) * 2
+#     padding = ((conv_cfg['kernel_size'][0] - 1) // 2, (conv_cfg['kernel_size'][1] - 1) // 2)
+#     conv = QuantizedConv2d(conv_cfg['in_channel'], conv_cfg['out_channel'], conv_cfg['kernel_size'],
+#                            padding=padding, stride=conv_cfg['stride'],
+#                            groups=conv_cfg['groups'], w_bit=w_bit, a_bit=a_bit,
+#                            **kwargs)
+#     # load pretrained data
+#     conv.weight.data = to_pt(conv_cfg['params']['weight'])
+#     conv.bias.data = to_pt(conv_cfg['params']['bias'])
+#     # Note that these parameters are added for convenience, not actually needed
+#     conv.x_scale = to_pt(conv_cfg['params']['x_scale']).cuda()
+#     conv.y_scale = to_pt(conv_cfg['params']['y_scale']).cuda()
+#     conv.w_scale = to_pt(conv_cfg['params']['w_scales']).cuda()
+#     return conv
 
 
 def build_quantized_block_from_cfg(blk_cfg, n_bit=8):

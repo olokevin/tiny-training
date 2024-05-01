@@ -14,10 +14,10 @@ from quantize.quantized_ops_diff import QuantizedMbBlockDiff as QuantizedMbBlock
 from quantize.quantized_ops_diff import _TruncateActivationRange
 
 PARAM_GRAD_DEBUG = None
-PARAM_GRAD_DEBUG = True
+# PARAM_GRAD_DEBUG = True
 
 OUT_GRAD_DEBUG = None
-OUT_GRAD_DEBUG = True
+# OUT_GRAD_DEBUG = True
 
 def save_grad(layer):
     def hook(grad):
@@ -174,6 +174,18 @@ class ClassificationTrainer(BaseTrainer):
                                 ZO_bias_grad = this_layer.bias.grad.data
                     
                     ##### NO BP #####
+                    elif configs.ZO_Estim.fc_bp == 'cls_only':
+                        obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
+
+                        output, loss = obj_fn(detach_idx=-3)
+                        loss.backward()
+                        
+                        with torch.no_grad():
+                            self.ZO_Estim.update_obj_fn(obj_fn)
+                            output, loss, grads = self.ZO_Estim.estimate_grad()
+
+                            self.ZO_Estim.update_grad()
+
                     elif configs.ZO_Estim.fc_bp == False:
                         with torch.no_grad():
                             obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
@@ -240,13 +252,13 @@ class ClassificationTrainer(BaseTrainer):
                 if configs.run_config.iteration_decay == 1:
                     self.lr_scheduler.step()    
 
-                if self.ZO_Estim is not None:
-                    train_info_dict = {
-                        'train/top1': train_top1.avg.item(),
-                        'train/loss': train_loss.avg.item(),
-                        'train/lr': self.optimizer.param_groups[0]['lr'],
-                    }
-                    logger.info(f'epoch:{epoch} batch:{batch_idx}: f{train_info_dict}')
+                # if self.ZO_Estim is not None:
+                #     train_info_dict = {
+                #         'train/top1': train_top1.avg.item(),
+                #         'train/loss': train_loss.avg.item(),
+                #         'train/lr': self.optimizer.param_groups[0]['lr'],
+                #     }
+                #     logger.info(f'epoch:{epoch} batch:{batch_idx}: f{train_info_dict}')
         
         return {
             'train/top1': train_top1.avg.item(),
