@@ -12,6 +12,8 @@ from .quantized_ops_diff import QuantizedMbBlockDiff as QuantizedMbBlock
 from .quantized_ops_diff import QuantizedElementwiseDiff as QuantizedElementwise
 from .quantized_ops_diff import QuantizedAvgPoolDiff as QuantizedAvgPool
 
+from core.utils.config import configs
+
 __all__ = ['build_quantized_network_from_cfg', 'get_effective_scale']
 
 
@@ -35,18 +37,18 @@ def get_effective_scale(scale_x, scale_w, scale_y):
         raise NotImplementedError
 
 
-def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
+def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None, normalization_func=None, activation_func=None):
     # kwargs = {
-    #     'zero_x': to_pt(conv_cfg['params']['x_zero']) * torch.ones(conv_cfg['in_channel']),
+    #     'zero_x': (to_pt(conv_cfg['params']['x_zero']) * torch.ones(conv_cfg['in_channel'])).view(1,-1,1,1),
     #     'zero_w': to_pt(0),
-    #     'zero_y': to_pt(conv_cfg['params']['y_zero']) * torch.ones(conv_cfg['out_channel']),
-    #     'x_scale': to_pt(conv_cfg['params']['x_scale']) * torch.ones(conv_cfg['in_channel']),
-    #     'w_scale': to_pt(conv_cfg['params']['w_scales']),
-    #     'y_scale': to_pt(conv_cfg['params']['y_scale']) * torch.ones(conv_cfg['out_channel'])
+    #     'zero_y': (to_pt(conv_cfg['params']['y_zero']) * torch.ones(conv_cfg['out_channel'])).view(1,-1,1,1),
+    #     'scale_x': to_pt(conv_cfg['params']['x_scale']),
+    #     'scale_w': to_pt(conv_cfg['params']['w_scales']),
+    #     'scale_y': to_pt(conv_cfg['params']['y_scale'])
     # }
 
     kwargs = {
-        'zero_x': to_pt(conv_cfg['params']['x_zero']),
+        'zero_x': to_pt(conv_cfg['params']['x_zero']) ,
         'zero_w': to_pt(0),
         'zero_y': to_pt(conv_cfg['params']['y_zero']),
         'scale_x': to_pt(conv_cfg['params']['x_scale']),
@@ -70,6 +72,7 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
     conv = QuantizedConv2d(conv_cfg['in_channel'], conv_cfg['out_channel'], conv_cfg['kernel_size'],
                            padding=padding, stride=conv_cfg['stride'],
                            groups=conv_cfg['groups'], w_bit=w_bit, a_bit=a_bit,
+                           normalization_func=normalization_func, activation_func=activation_func,
                            **kwargs)
     # load pretrained data
     conv.weight.data = to_pt(conv_cfg['params']['weight'])
@@ -110,14 +113,17 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None):
 
 def build_quantized_block_from_cfg(blk_cfg, n_bit=8):
     blk = []
+    normalization_func = configs.train_config.normalization_func
+    activation_func = configs.train_config.activation_func
     if blk_cfg['pointwise1'] is not None:
-        blk.append(build_quantized_conv_from_cfg(blk_cfg['pointwise1'], w_bit=n_bit))
+        blk.append(build_quantized_conv_from_cfg(blk_cfg['pointwise1'], w_bit=n_bit, normalization_func=normalization_func, activation_func=activation_func))
     if blk_cfg['depthwise'] is not None:
-        blk.append(build_quantized_conv_from_cfg(blk_cfg['depthwise'], w_bit=n_bit))
+        blk.append(build_quantized_conv_from_cfg(blk_cfg['depthwise'], w_bit=n_bit, normalization_func=normalization_func, activation_func=activation_func))
     if 'se' in blk_cfg and blk_cfg['se'] is not None:
         raise NotImplementedError  # TODO: SE backward is not implemented yet
     if blk_cfg['pointwise2'] is not None:
-        blk.append(build_quantized_conv_from_cfg(blk_cfg['pointwise2'], w_bit=n_bit))
+        # pointwise2 do not have activation
+        blk.append(build_quantized_conv_from_cfg(blk_cfg['pointwise2'], w_bit=n_bit, normalization_func=normalization_func, activation_func=None))
 
     if blk_cfg['residual'] is not None:  # with residual connection
         if 'kernel_size' in blk_cfg['residual']:  # the conv case
@@ -166,8 +172,10 @@ def build_quantized_block_from_cfg(blk_cfg, n_bit=8):
 
 def build_quantized_network_from_cfg(cfg, n_bit=8):
     # building the network using our own json format
+    normalization_func = configs.train_config.normalization_func
+    activation_func = configs.train_config.activation_func
     if 'first_conv' in cfg:  # ProxylessNAS backbone
-        first_conv = build_quantized_conv_from_cfg(cfg['first_conv'], w_bit=n_bit)
+        first_conv = build_quantized_conv_from_cfg(cfg['first_conv'], w_bit=n_bit, normalization_func=normalization_func, activation_func=activation_func)
     else:
         raise NotImplementedError
     blocks = nn.Sequential(*[build_quantized_block_from_cfg(b, n_bit=n_bit) for b in cfg['blocks']])

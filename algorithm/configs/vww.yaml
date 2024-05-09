@@ -12,9 +12,9 @@ data_provider:
 
 run_config:
   # learning rate
-  bs256_lr: 0.1
-  n_epochs: 10
-  warmup_epochs: 1
+  bs256_lr: 0.01
+  n_epochs: 20
+  warmup_epochs: 2
 
   # iteration_decay: 0
 
@@ -28,8 +28,8 @@ run_config:
   # optimizer_name: sgd_scale
   # optimizer_name: sgd_scale_nomom
 
-  optimizer_name: sgd_scale_int
-  # optimizer_name: sgd_scale_int_nomom
+  # optimizer_name: sgd_scale_int
+  optimizer_name: sgd_scale_int_nomom
 
 net_config:
   net_name: mcunet-5fps
@@ -37,10 +37,10 @@ net_config:
 backward_config:
 
   # sparse update (100KB scheme): 88.84%
-  enable_backward_config: 1  
-  n_bias_update: 22
-  manual_weight_idx: 21-24-27-30-36-39
-  weight_update_ratio: 1-1-1-1-0.125-0.25
+  # enable_backward_config: 1  
+  # n_bias_update: 22
+  # manual_weight_idx: 21-24-27-30-36-39
+  # weight_update_ratio: 1-1-1-1-0.125-0.25
 
   # update last two blocks and biases (best setting for last k layers): 87.74%, uses 448KB
   # enable_backward_config: 1 
@@ -56,24 +56,45 @@ backward_config:
   # n_bias_update: 0
   # n_weight_update: 0
 
-  # enable_backward_config: 0
+  enable_backward_config: 0
 
+  # train_cls: 0
 
+train_config:
+  # train_scale: 1
+  # train_zero: 1
+  # train_normalization: 1
+
+  param_lr:  {
+    'scale_y': 0.01,
+    'gamma': 0.1,
+    'beta': 0.1,
+    'zero_y': 1,
+
+    'scale_w': 0.01, 
+  }
+
+  # normalization_func: BN
+
+  # normalization_func: L1FRN
+  # activation_func: TLU
+  
 ZO_Estim:
-  # en: True
+  en: True
+
   # fc_bp: False
-  fc_bp: cls_only
-  # fc_bp: 'partial_BP'
+  # fc_bp: cls_only
+  fc_bp: 'partial_BP'
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
   n_sample: 10
   signSGD: False
 
-  trainable_param_list: all
-  # trainable_param_list: ['bias']
-  # trainable_param_list: ['scale_y']
-  # trainable_param_list: ['bias', 'scale_y','zero_y','scale_w']
+  # trainable_param_list: all
+  trainable_param_list: ['scale_y']
+  # trainable_param_list: ['gamma', 'beta']
+  # trainable_param_list: ['bias', 'scale_y','zero_y','scale_w', 'gamma', 'beta']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
   
@@ -82,10 +103,9 @@ ZO_Estim:
   # trainable_layer_list: layer-first-20
   # trainable_layer_list: layer-last-30
 
-  # trainable_layer_list: ['1.8']
-  trainable_layer_list: ['1.12', '1.13']
-  # trainable_layer_list: ['1.8.conv.0']
-  # trainable_layer_list: ['1.7.conv.0', '1.12.conv.0', '1.13.conv.0']
+  # trainable_layer_list: ['1.7']
+  # trainable_layer_list: ['1.12', '1.13']
+  trainable_layer_list: ['1.7.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
 
@@ -114,19 +134,17 @@ ZO_Estim:
   #   'weight': 100,
   #   'bias': 100,
   #   'scale_y': 0.01,
-  #   'zero_y': 10,
-  #   'scale_w': 0.01,
+  #   'zero_y': 128,
+  #   'gamma': 0.1,
+  #   'beta': 0.1,
+
+  #   'scale_w': 0.001,
   # }
 
+  # # param_update_method: None
   # # param_update_method: layerwise
   # # param_update_method: blockwise
   # param_update_method: modelwise
-
-  # param_lr:  {
-  #   'scale_y': 0.1,
-  #   'zero_y': 1,
-  #   'scale_w': 0.01,
-  # }
 
   ############################## Weight Perturbation ##############################
   # obj_fn_type: classifier

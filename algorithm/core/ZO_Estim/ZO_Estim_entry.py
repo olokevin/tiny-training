@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 
 def split_model(model):
     modules = []
@@ -22,6 +23,18 @@ def split_named_model(model, parent_name=''):
         else:
             named_modules[parent_name + name] = module
     return named_modules
+
+class SplitedBlock(nn.Module):
+    def __init__(self, idx, name, block):
+        super().__init__()
+        self.idx = idx
+        self.name = name
+        self.block = block
+        self.type = type(block)
+        self.grad = None
+    
+    def update_grad(self, grad):
+        self.grad = grad
 
 from .ZO_Estim_MC import ZO_Estim_MC
 

@@ -19,4 +19,14 @@ def build_mcu_model():
     else:
         raise NotImplementedError
 
+    from core.ZO_Estim.ZO_Estim_entry import split_model, split_named_model, SplitedBlock
+    splited_named_modules = split_named_model(model)
+    splited_block_list = []
+    idx = 0
+    for name, block in splited_named_modules.items():
+        splited_block_list.append(SplitedBlock(idx, name, block))
+        idx += 1
+    
+    model.splited_block_list = splited_block_list
+    
     return model

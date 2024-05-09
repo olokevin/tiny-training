@@ -11,13 +11,14 @@ from ..utils import dist
 
 from core.ZO_Estim.ZO_Estim_entry import build_obj_fn, split_model, split_named_model
 from quantize.quantized_ops_diff import QuantizedMbBlockDiff as QuantizedMbBlock
+from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
 from quantize.quantized_ops_diff import _TruncateActivationRange
 
 PARAM_GRAD_DEBUG = None
-# PARAM_GRAD_DEBUG = True
+PARAM_GRAD_DEBUG = True
 
 OUT_GRAD_DEBUG = None
-# OUT_GRAD_DEBUG = True
+OUT_GRAD_DEBUG = True
 
 def save_grad(layer):
     def hook(grad):
@@ -91,6 +92,41 @@ class ClassificationTrainer(BaseTrainer):
                     if configs.backward_config.enable_backward_config:
                         from core.utils.partial_backward import apply_backward_config
                         apply_backward_config(self.model, configs.backward_config)
+                    
+                    if configs.backward_config.train_cls == 0:
+                        self.model[-2].weight.grad = None
+                        self.model[-2].bias.grad = None
+                    
+                    # if configs.train_config.train_scale or configs.train_config.train_zero or configs.train_config.train_normalization:
+                    #     signSGD = configs.ZO_Estim.signSGD
+                    #     param_lr = configs.train_config.param_lr
+                    #     for splited_block in self.model.splited_block_list:
+                    #         block_idx = splited_block.idx
+
+                    #         if block_idx == 0:
+                    #             # First conv layer
+                    #             splited_block.block.update_quantize_params(signSGD, param_lr)
+                    #         elif block_idx > 0:
+                    #             # residual blocks
+                    #             if type(splited_block.block) == QuantizedMbBlock:
+                    #                 last_splited_block = self.model.splited_block_list[block_idx-1]
+                    #                 if type(last_splited_block.block) == QuantizedMbBlock:
+                    #                     if last_splited_block.block.q_add is not None:
+                    #                         block_input_scale = last_splited_block.block.q_add.scale_y
+                    #                         block_input_zero = last_splited_block.block.q_add.zero_y
+                    #                     else:
+                    #                         block_input_scale = last_splited_block.block.conv[-1].scale_y
+                    #                         block_input_zero = last_splited_block.block.conv[-1].zero_y
+                    #                 elif type(last_splited_block.block) == QuantizedConv2d:
+                    #                     block_input_scale = last_splited_block.block.scale_y
+                    #                     block_input_zero = last_splited_block.block.zero_y
+                    #                 else:
+                    #                     raise NotImplementedError('Unknown block type')
+                                    
+                    #                 splited_block.block.block_input_update_quantize_params(block_input_scale, block_input_zero)
+                    #                 splited_block.block.block_conv_update_quantize_params(signSGD, param_lr)
+                    #             else:
+                    #                 pass
                 else:
                     ##### break BP #####
                     if configs.ZO_Estim.fc_bp == 'break_BP':
@@ -107,8 +143,8 @@ class ClassificationTrainer(BaseTrainer):
                     elif configs.ZO_Estim.fc_bp == 'partial_BP':
                         if OUT_GRAD_DEBUG:
                             splited_named_modules = split_named_model(self.model)
-                            for name, block in splited_named_modules.items():
-                                print(name, block)
+                            # for name, block in splited_named_modules.items():
+                            #     print(name, block)
 
                             split_modules_list = split_model(self.model)
                             print(split_modules_list)
@@ -128,7 +164,8 @@ class ClassificationTrainer(BaseTrainer):
                                         if block.residual_conv is not None:
                                             x = block.residual_conv(x)
                                         out = block.q_add(x, out)
-                                        x = _TruncateActivationRange.apply(out, block.a_bit)
+                                        # No normalization for residual block  
+                                        x = _TruncateActivationRange.apply(out, block.q_add.scale_y, block.q_add.zero_y, block.a_bit, None)
                                     else:
                                         x = out
                                 else:
@@ -154,6 +191,7 @@ class ClassificationTrainer(BaseTrainer):
                             else:
                                 conv_idx = 2
                             this_layer = self.model[int(name_list[0])][int(name_list[1])].conv[conv_idx]
+                            # this_layer = self.model[int(name_list[0])][int(name_list[1])].conv[conv_idx].normalization_layer
                             FO_weight_grad = this_layer.weight.grad.data
                             FO_bias_grad = this_layer.bias.grad.data
 
@@ -195,36 +233,16 @@ class ClassificationTrainer(BaseTrainer):
                             self.ZO_Estim.update_grad()
                 
                 if PARAM_GRAD_DEBUG:
-
-                    w_scale = this_layer.w_scale.view(-1, 1, 1, 1).cuda()
-                    scale_FO_grad = FO_weight_grad / w_scale
-                    scale_FO_grad_2 = FO_weight_grad / w_scale ** 2
-                    scale_ZO_grad = ZO_weight_grad / w_scale
-                    scale_ZO_grad_2 = ZO_weight_grad / w_scale ** 2
                     print('\nWeight Norm')
                     print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
                     print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
-                    # print('scale_FO_grad norm:', torch.linalg.norm(scale_FO_grad))
-                    # print('scale_FO_grad_2 norm:', torch.linalg.norm(scale_FO_grad_2))
 
                     print('ZO_weight_grad norm:', torch.linalg.norm(ZO_weight_grad))
-                    # print('scale_ZO_grad norm:', torch.linalg.norm(scale_ZO_grad))
-                    # print('scale_ZO_grad_2 norm:', torch.linalg.norm(scale_ZO_grad_2))
-
-                    bias_scale = (this_layer.effective_scale.data * this_layer.y_scale)
-                    scale_FO_grad = FO_bias_grad / bias_scale
-                    scale_FO_grad_2 = FO_bias_grad / bias_scale ** 2
-                    scale_ZO_grad = ZO_bias_grad / bias_scale
-                    scale_ZO_grad_2 = ZO_bias_grad / bias_scale ** 2
                     print('\nBias Norm')
                     print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
                     print('FO_bias_grad norm:', torch.linalg.norm(FO_bias_grad))
-                    # print('scale_FO_grad norm:', torch.linalg.norm(scale_FO_grad))
-                    # print('scale_FO_grad_2 norm:', torch.linalg.norm(scale_FO_grad_2))
 
                     print('ZO_bias_grad norm:', torch.linalg.norm(ZO_bias_grad))
-                    # print('scale_ZO_grad norm:', torch.linalg.norm(scale_ZO_grad))
-                    # print('scale_ZO_grad_2 norm:', torch.linalg.norm(scale_ZO_grad_2))
 
                 if hasattr(self.optimizer, 'pre_step'):  # for SGDScale optimizer
                     self.optimizer.pre_step(self.model)

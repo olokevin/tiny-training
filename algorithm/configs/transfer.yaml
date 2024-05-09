@@ -7,14 +7,9 @@ data_provider:
   
   root: /home/yequan/dataset/stanford_car
   num_classes: 196
-  # Last only
-  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240418-184445-2021615/checkpoint/ckpt.best.pth'
-  # 7.0
-  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240417-001040-1964541/checkpoint/ckpt.best.pth'
-  # 12+13
-  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240417-000924-1962394/checkpoint/ckpt.best.pth'
-  # only train last 2 blocks
-  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240409-044117-1662606/checkpoint/ckpt.best.pth'
+  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240508-224505-3675072/checkpoint/ckpt.best.pth'
+  # BN calibrated
+  # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240506-065218-3272600/checkpoint/ckpt.best.pth'
   
   # root: /home/yequan/dataset/aircraft
   # num_classes: 100
@@ -31,18 +26,18 @@ data_provider:
   # dataset: cifar10
   # num_classes: 10
 
-  base_batch_size: 64
+  base_batch_size: 128
 
 run_config:
-  # warmup_epochs: 0
-  # n_epochs: 3
+  # warmup_epochs: 5
+  n_epochs: 100
   bs256_lr: 0.1
 
-  iteration_decay: 0
+  # iteration_decay: 0
 
   # optimizer
   # optimizer_name: sgd
-  optimizer_name: sgd_nomom
+  # optimizer_name: sgd_nomom
   # optimizer_name: adam
 
   # optimizer_name: sgd_int
@@ -52,16 +47,14 @@ run_config:
   # optimizer_name: sgd_scale_nomom
 
   # optimizer_name: sgd_scale_int
-  # optimizer_name: sgd_scale_int_nomom
+  optimizer_name: sgd_scale_int_nomom
 
 net_config:
   net_name: mcunet-5fps
+  # net_name: mbv2-w0.35
 
 backward_config:
   # quantize_gradient: 1
-
-  train_scale: 1
-  # train_zero: 1
 
   # sparse update (100KB scheme): 88.84%
   # enable_backward_config: 1  
@@ -86,39 +79,57 @@ backward_config:
   # n_bias_update: 22
   # n_weight_update: 0
 
-  enable_backward_config: 1
-  n_bias_update: 0
-  n_weight_update: 0
+  # enable_backward_config: 1
+  # n_bias_update: 0
+  # n_weight_update: 0
 
-  # enable_backward_config: 0
+  enable_backward_config: 0
 
+train_config:
+  # train_scale: 1
+  # train_normalization: 1
+
+  param_lr:  {
+    'scale_y': 0.01,
+    'gamma': 0.1,
+    'beta': 0.1,
+    'zero_y': 1,
+
+    'scale_w': 0.01, 
+  }
+
+  # normalization_func: BN
+
+  # normalization_func: L1FRN
+  # activation_func: TLU
+  
 ZO_Estim:
   en: True
+
   # fc_bp: False
-  fc_bp: cls_only
-  # fc_bp: 'partial_BP'
+  # fc_bp: cls_only
+  fc_bp: 'partial_BP'
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 1
-  signSGD: True
+  n_sample: 10
+  signSGD: False
 
   # trainable_param_list: all
-  # trainable_param_list: ['bias']
-  trainable_param_list: ['scale_y']
-  # trainable_param_list: ['bias', 'scale_y','zero_y','scale_w']
+  # trainable_param_list: ['scale_y']
+  trainable_param_list: ['gamma']
+  # trainable_param_list: ['bias', 'scale_y','zero_y','scale_w', 'gamma', 'beta']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight']
   # trainable_param_list: ['1.7.conv.0.weight', '1.8.conv.0.weight', '1.9.conv.0.weight', '1.10.conv.0.weight', '1.12.conv.0.weight', '1.13.conv.0.weight', '1.10.conv.1.bias', '1.10.conv.2.bias', '1.11.conv.0.bias', '1.11.conv.1.bias', '1.11.conv.2.bias', '1.12.conv.0.bias', '1.12.conv.1.bias', '1.12.conv.2.bias', '1.13.conv.0.bias', '1.13.conv.1.bias', '1.13.conv.2.bias']
   
-  trainable_layer_list: block-all
+  # trainable_layer_list: block-all
   # trainable_layer_list: layer-all
   # trainable_layer_list: layer-first-20
   # trainable_layer_list: layer-last-30
 
   # trainable_layer_list: ['1.8']
-  # trainable_layer_list: ['1.3', '1.6']
-  # trainable_layer_list: ['1.8.conv.0']
-  # trainable_layer_list: ['1.7.conv.0', '1.12.conv.0', '1.13.conv.0']
+  # trainable_layer_list: ['1.12', '1.13']
+  trainable_layer_list: ['1.8.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
 
@@ -131,35 +142,35 @@ ZO_Estim:
   sample_method: coord_basis
 
   ############################## Activation Perturbation ##############################
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: activation
+  obj_fn_type: classifier_layerwise
+  perturb_method: activation
 
-  # sigma: 100
+  sigma: 100
 
-  # sync_batch_perturb: 0
+  perturb_before_round: 1
+
+  sync_batch_perturb: 0
   # sync_batch_perturb: 1
 
   ############################## Param Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: param
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: param
 
-  sigma: {
-    'weight': 100,
-    'bias': 100,
-    'scale_y': 0.01,
-    'zero_y': 10,
-    'scale_w': 0.01,
-  }
+  # sigma: {
+  #   'weight': 100,
+  #   'bias': 100,
+  #   'scale_y': 0.01,
+  #   'zero_y': 128,
+  #   'gamma': 0.1,
+  #   'beta': 0.1,
 
-  # param_update_method: layerwise
-  # param_update_method: blockwise
-  param_update_method: modelwise
+  #   'scale_w': 0.001,
+  # }
 
-  param_lr:  {
-    'scale_y': 0.1,
-    'zero_y': 1,
-    'scale_w': 0.01,
-  }
+  # param_update_method: None
+  # # param_update_method: layerwise
+  # # param_update_method: blockwise
+  # # param_update_method: modelwise
 
   ############################## Weight Perturbation ##############################
   # obj_fn_type: classifier
@@ -185,4 +196,3 @@ ZO_Estim:
   # prior_method: last_grad_perturb
   # prior_method: mov_avg_perturb
   # prior_method: last_grad_neighbor
-  
