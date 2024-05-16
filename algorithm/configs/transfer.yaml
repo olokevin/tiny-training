@@ -1,12 +1,14 @@
 resume: 0
 
 data_provider:
-  # root: /home/yequan/dataset/flowers102
-  # num_classes: 102
+  dataset: flowers
+  root: /home/yequan/dataset/flowers102
+  num_classes: 102
   # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/flowers102/mcunet-5fps/FO/20240331-001718-1312245/checkpoint/ckpt.best.pth'
   
-  root: /home/yequan/dataset/stanford_car
-  num_classes: 196
+  # dataset: cars
+  # root: /home/yequan/dataset/stanford_car
+  # num_classes: 196
   # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240508-224505-3675072/checkpoint/ckpt.best.pth'
   # BN calibrated
   # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/stanford_car/mcunet-5fps/FO/20240506-065218-3272600/checkpoint/ckpt.best.pth'
