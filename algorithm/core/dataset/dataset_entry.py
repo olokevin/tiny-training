@@ -1,6 +1,7 @@
 from .vision import *
 from ..utils.config import configs
 from .vision.transform import *
+import os
 import torchvision
 import pyvww
 
@@ -8,6 +9,7 @@ __all__ = ['build_dataset']
 
 
 def build_dataset():
+    configs.data_provider.root = os.path.expanduser(configs.data_provider.root)
     if configs.data_provider.dataset == 'image_folder':
         dataset = ImageFolder(
             root=configs.data_provider.root,
@@ -51,8 +53,8 @@ def build_dataset():
 
     elif configs.data_provider.dataset == 'cars':
         dataset = {
-            'train': torchvision.datasets.StanfordCars(configs.data_provider.root, split='train', transform=ImageTransform()['train'], download=True),
-            'val': torchvision.datasets.StanfordCars(configs.data_provider.root, split='test', transform=ImageTransform()['val'], download=True),
+            'train': torchvision.datasets.StanfordCars(configs.data_provider.root, split='train', transform=ImageTransform()['train'], download=False),
+            'val': torchvision.datasets.StanfordCars(configs.data_provider.root, split='test', transform=ImageTransform()['val'], download=False),
         }
     elif configs.data_provider.dataset == 'aircraft':
         dataset = {

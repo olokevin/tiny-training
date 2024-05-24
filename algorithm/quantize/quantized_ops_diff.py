@@ -23,6 +23,14 @@ def round_tensor(x):
     else:
         raise NotImplementedError
 
+def min_divisible_value(n1, v1):
+    """make sure v1 is divisible by n1, otherwise decrease v1"""
+    if v1 >= n1:
+        return n1
+    while n1 % v1 != 0:
+        v1 -= 1
+    return v1
+
 
 class _QuantizedAvgPoolFunc(torch.autograd.Function):
     @staticmethod
@@ -198,6 +206,9 @@ class _QuantizedNormalization(torch.autograd.Function):
         ctx.normalization_func = normalization_func
         if normalization_func is None:
             pass
+        elif normalization_func == 'SSF':
+            ctx.save_for_backward(y,)
+            y = y * gamma.view(1,-1,1,1) + beta.view(1,-1,1,1)
         # elif normalization_func == 'L1FRN':
         #     v = torch.mean(y.abs(), dim=[-1, -2], keepdim=True)
         #     # epsilon = torch.ones(1, y.size(1), 1, 1).cuda()
@@ -207,8 +218,8 @@ class _QuantizedNormalization(torch.autograd.Function):
         #     y = y_hat * gamma.view(1,-1,1,1) + beta.view(1,-1,1,1)
 
         #     ctx.save_for_backward(gamma, eta, y_hat)
-        # else:
-        #     raise NotImplementedError('Normalization function not implemented')
+        else:
+            raise NotImplementedError('Normalization function not implemented')
         
         return y
 
@@ -217,6 +228,11 @@ class _QuantizedNormalization(torch.autograd.Function):
         if ctx.normalization_func is None:
             # STE estimator
             return grad_output, None, None, None, None
+        elif ctx.normalization_func == 'SSF':
+            y, = ctx.saved_tensors
+            grad_gamma = (grad_output * y).sum([0, 2, 3])
+            grad_beta = grad_output.sum([0, 2, 3])
+            return grad_output, grad_gamma, grad_beta, None, None
         # elif ctx.normalization_func == 'L1FRN':
         #     # grad_output: dL/dy_{fp}
         #     gamma, eta, y_hat = ctx.saved_tensors
@@ -350,6 +366,11 @@ class QuantizedConv2dDiff(QuantizedConv2d):
         if self.normalization_func is not None:
             if self.normalization_func == 'BN':
                 self.normalization_layer = torch.nn.BatchNorm2d(out_channels)
+                self.gamma = self.normalization_layer.weight
+                self.beta = self.normalization_layer.bias
+            elif self.normalization_func == 'GN':
+                num_groups = out_channels // min_divisible_value(out_channels, 8)
+                self.normalization_layer = torch.nn.GroupNorm(num_channels=out_channels,num_groups=num_groups,affine=True)
                 self.gamma = self.normalization_layer.weight
                 self.beta = self.normalization_layer.bias
             elif self.normalization_func == 'L1FRN':

@@ -18,7 +18,8 @@ from ..utils.config import configs
 from ..utils.logging import logger
 
 DEBUG = None
-DEBUG = True
+# DEBUG = True
+
 class ZO_Estim_MC(nn.Module):
     def __init__(
         self,
@@ -818,7 +819,79 @@ class ZO_Estim_MC(nn.Module):
 
         param_ZO_grad = param_ZO_grad.view(param_shape)
         return param_ZO_grad
+    
+    def get_scale_w_ZO_gradient(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method):
+        param_dim = param.numel()
+        param_shape = param.shape
+        param_vec = param.view(-1)
+        old_param_vec = param_vec * 1
 
+        param_ZO_grad = torch.zeros_like(param_vec, device=self.device)
+
+        # sigma = torch.mean(param)
+        # print(torch.mean(param))
+
+        if sample_method == 'coord_basis':
+            for i in range(param_dim):
+                
+                old_weight = trainable_layer.weight.data[:,i,:,:].round()
+                # pos
+                param_vec[i] = param_vec[i] + sigma
+                trainable_layer.weight.data[:,i,:,:] = (old_param_vec[i] * trainable_layer.weight.data[:,i,:,:] / param_vec[i]).round()
+
+                _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+                param_vec[i] = param_vec[i] - sigma
+                trainable_layer.weight.data[:,i,:,:] = old_weight
+
+                # neg
+                if estimate_method == 'forward':
+                    param_ZO_grad[i] = (pos_loss - old_loss) / sigma
+                elif estimate_method == 'antithetic':
+                    param_vec[i] = param_vec[i] - sigma
+                    trainable_layer.weight.data[:,i,:,:] = (old_param_vec[i] * trainable_layer.weight.data[:,i,:,:] / param_vec[i]).round()
+
+                    _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+                    
+                    param_vec[i] = param_vec[i] + sigma
+                    trainable_layer.weight.data[:,i,:,:] = old_weight
+
+                    param_ZO_grad[i] = (pos_loss - neg_loss) / 2 / sigma
+                else:
+                    raise NotImplementedError('Unknown estimate method')
+        elif sample_method == 'bernoulli':
+            old_weight = trainable_layer.weight.data.round()
+            for i in range(self.n_sample):
+                u = self._sample_unit_sphere_quantized(param_vec.shape, sample_method, self.device)
+                # pos
+                param_vec.add_(u * sigma)
+                trainable_layer.weight.data = (old_param_vec.view(1,-1,1,1) * trainable_layer.weight.data / param_vec.view(1,-1,1,1)).round()
+
+                _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+
+                param_vec.sub_(u * sigma)
+                trainable_layer.weight.data = old_weight
+
+                # neg
+                if estimate_method == 'forward':
+                    param_ZO_grad += (pos_loss - old_loss) / sigma * u
+                elif estimate_method == 'antithetic':
+                    param_vec.sub_(u * sigma)
+                    trainable_layer.weight.data = (old_param_vec.view(1,-1,1,1) * trainable_layer.weight.data / param_vec.view(1,-1,1,1)).round()
+
+                    _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+
+                    param_vec.add_(u * sigma)
+                    trainable_layer.weight.data = old_weight
+
+                    param_ZO_grad += (pos_loss - neg_loss) / 2 / sigma * u
+            param_ZO_grad = param_ZO_grad / self.n_sample
+            # param_ZO_grad = param_ZO_grad / 8
+        else:
+            return NotImplementedError('sample method not implemented yet')
+
+        param_ZO_grad = param_ZO_grad.view(param_shape)
+        return param_ZO_grad
+    
     def get_layer_param_ZO_gradient(self, block_idx, trainable_layer, block_in, old_loss, trainable_param_list, estimate_method, sample_method):
         param_ZO_grad_dict = dict()
         
@@ -829,12 +902,19 @@ class ZO_Estim_MC(nn.Module):
                 param = getattr(trainable_layer, trainable_param_name)
                 if isinstance(self.sigma, dict):
                     sigma = self.sigma[trainable_param_name]
-                param_ZO_grad = self.get_single_param_ZO_gradient(block_idx, param, block_in, old_loss, sigma, estimate_method, sample_method)
+                
+                if trainable_param_name == 'scale_w':
+                    param_ZO_grad = self.get_scale_w_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
+                else:
+                    param_ZO_grad = self.get_single_param_ZO_gradient(block_idx, param, block_in, old_loss, sigma, estimate_method, sample_method)
                 
                 param_ZO_grad_dict[trainable_param_name] = param_ZO_grad
 
                 param.grad = param_ZO_grad
                 param_ZO_grad_dict[trainable_param_name] = param_ZO_grad
+            
+            if DEBUG:
+                logger.info(f'{trainable_param_name} gradient norm {torch.linalg.norm(param_ZO_grad)}')
         
         return param_ZO_grad_dict
     
@@ -877,11 +957,14 @@ class ZO_Estim_MC(nn.Module):
                 
                 splited_block.block.block_input_update_quantize_params(block_input_scale, block_input_zero)
 
+            ##### block
             if conv_idx == None:
                 for conv_idx in range(len(splited_block.block.conv)):
+                    ##### Estimate gradient
                     trainable_layer = splited_block.block.conv[conv_idx] 
                     self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
                     
+                    ##### conv update
                     if configs.ZO_Estim.param_update_method == 'layerwise':
                         splited_block.block.conv[conv_idx].update_quantize_params(self.signSGD, param_lr)
                         try:
@@ -892,6 +975,7 @@ class ZO_Estim_MC(nn.Module):
                                 splited_block.block.q_add.scale_x2 = splited_block.block.conv[conv_idx].scale_y * 1.0
                                 splited_block.block.q_add.zero_x2 = splited_block.block.conv[conv_idx].zero_y * 1
                 
+                ##### q_add update
                 if splited_block.block.q_add is not None:
                     trainable_layer = splited_block.block.q_add
                     self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
@@ -901,9 +985,20 @@ class ZO_Estim_MC(nn.Module):
                 if configs.ZO_Estim.param_update_method == 'blockwise':
                     splited_block.block.block_conv_update_quantize_params(self.signSGD, param_lr)
 
+            ##### layer
             else:
                 trainable_layer = splited_block.block.conv[conv_idx] 
                 self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
+
+                if configs.ZO_Estim.param_update_method == 'layerwise':
+                    splited_block.block.conv[conv_idx].update_quantize_params(self.signSGD, param_lr)
+                    try:
+                        splited_block.block.conv[conv_idx+1].scale_x = splited_block.block.conv[conv_idx].scale_y * 1.0
+                        splited_block.block.conv[conv_idx+1].zero_x = splited_block.block.conv[conv_idx].zero_y * 1
+                    except IndexError:
+                        if splited_block.block.q_add is not None:
+                            splited_block.block.q_add.scale_x2 = splited_block.block.conv[conv_idx].scale_y * 1.0
+                            splited_block.block.q_add.zero_x2 = splited_block.block.conv[conv_idx].zero_y * 1
                 
         if configs.ZO_Estim.param_update_method == 'modelwise':
             for trainable_layer_name in self.trainable_layer_list:
