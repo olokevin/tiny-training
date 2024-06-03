@@ -362,6 +362,8 @@ class ZO_Estim_MC(nn.Module):
             else:
                 ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, local_backward_args=True)
             
+            ZO_grad = ZO_grad / 100
+            
             ##### Update gradient
             batch_sz = ZO_grad.shape[0]
             
@@ -483,8 +485,22 @@ class ZO_Estim_MC(nn.Module):
         post_actv = splited_block.block.conv[conv_idx](pre_activ)
 
         assert type(self.sigma) is int
-        mask = splited_block.block.conv[conv_idx].binary_mask.int()
-        # mask = torch.ones_like(post_actv)
+
+        if configs.train_config.grad_output_prune_ratio is not None:
+            grad_output_prune_ratio = configs.train_config.grad_output_prune_ratio
+            mask = torch.zeros_like(post_actv, dtype=torch.bool)
+
+            topk_dim = int((1.0-grad_output_prune_ratio) * post_actv.numel())
+            _, indices = torch.topk((post_actv-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
+            mask.view(-1)[indices] = True
+            # batch_sz = post_actv.shape[0]
+            # topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+            # for b in range(batch_sz):
+            #     _, indices = torch.topk((post_actv[b]-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
+            #     mask[b].view(-1)[indices] = True
+        else:
+            mask = splited_block.block.conv[conv_idx].binary_mask.int()
+            # mask = torch.ones_like(post_actv)
 
         post_actv_shape = tuple(post_actv.shape)
         batch_sz = post_actv_shape[0]
@@ -613,8 +629,21 @@ class ZO_Estim_MC(nn.Module):
 
         assert type(self.sigma) is int
         assert hasattr(splited_block.block, 'binary_mask')
-        mask = splited_block.block.binary_mask.int()
-        # mask = torch.ones_like(post_actv)
+        if configs.train_config.grad_output_prune_ratio is not None:
+            grad_output_prune_ratio = configs.train_config.grad_output_prune_ratio
+            mask = torch.zeros_like(post_actv, dtype=torch.bool)
+
+            topk_dim = int((1.0-grad_output_prune_ratio) * post_actv.numel())
+            _, indices = torch.topk((post_actv-splited_block.block.conv[-1].zero_y).flatten(), topk_dim)
+            mask.view(-1)[indices] = True
+            # batch_sz = post_actv.shape[0]
+            # topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+            # for b in range(batch_sz):
+            #     _, indices = torch.topk((post_actv[b]-splited_block.block.conv[-1].zero_y).flatten(), topk_dim)
+            #     mask[b].view(-1)[indices] = True
+        else:
+            mask = splited_block.block.conv[-1].binary_mask.int()
+            # mask = torch.ones_like(post_actv)
 
         post_actv_shape = tuple(post_actv.shape)
         batch_sz = post_actv_shape[0]
