@@ -37,7 +37,7 @@ def get_effective_scale(scale_x, scale_w, scale_y):
         raise NotImplementedError
 
 
-def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None, normalization_func=None, activation_func=None):
+def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None, normalization_func=None, activation_func=None, grad_output_prune_ratio=None):
     # kwargs = {
     #     'zero_x': (to_pt(conv_cfg['params']['x_zero']) * torch.ones(conv_cfg['in_channel'])).view(1,-1,1,1),
     #     'zero_w': to_pt(0),
@@ -72,7 +72,7 @@ def build_quantized_conv_from_cfg(conv_cfg, w_bit=8, a_bit=None, normalization_f
     conv = QuantizedConv2d(conv_cfg['in_channel'], conv_cfg['out_channel'], conv_cfg['kernel_size'],
                            padding=padding, stride=conv_cfg['stride'],
                            groups=conv_cfg['groups'], w_bit=w_bit, a_bit=a_bit,
-                           normalization_func=normalization_func, activation_func=activation_func,
+                           normalization_func=normalization_func, activation_func=activation_func, grad_output_prune_ratio=grad_output_prune_ratio,
                            **kwargs)
     # load pretrained data
     conv.weight.data = to_pt(conv_cfg['params']['weight'])
@@ -115,15 +115,16 @@ def build_quantized_block_from_cfg(blk_cfg, n_bit=8):
     blk = []
     normalization_func = configs.train_config.normalization_func
     activation_func = configs.train_config.activation_func
+    grad_output_prune_ratio = configs.train_config.grad_output_prune_ratio
     if blk_cfg['pointwise1'] is not None:
-        blk.append(build_quantized_conv_from_cfg(blk_cfg['pointwise1'], w_bit=n_bit, normalization_func=normalization_func, activation_func=activation_func))
+        blk.append(build_quantized_conv_from_cfg(blk_cfg['pointwise1'], w_bit=n_bit, normalization_func=normalization_func, activation_func=activation_func, grad_output_prune_ratio=grad_output_prune_ratio))
     if blk_cfg['depthwise'] is not None:
-        blk.append(build_quantized_conv_from_cfg(blk_cfg['depthwise'], w_bit=n_bit, normalization_func=normalization_func, activation_func=activation_func))
+        blk.append(build_quantized_conv_from_cfg(blk_cfg['depthwise'], w_bit=n_bit, normalization_func=normalization_func, activation_func=activation_func, grad_output_prune_ratio=grad_output_prune_ratio))
     if 'se' in blk_cfg and blk_cfg['se'] is not None:
         raise NotImplementedError  # TODO: SE backward is not implemented yet
     if blk_cfg['pointwise2'] is not None:
         # pointwise2 do not have activation
-        blk.append(build_quantized_conv_from_cfg(blk_cfg['pointwise2'], w_bit=n_bit, normalization_func=normalization_func, activation_func=None))
+        blk.append(build_quantized_conv_from_cfg(blk_cfg['pointwise2'], w_bit=n_bit, normalization_func=normalization_func, activation_func=None, grad_output_prune_ratio=grad_output_prune_ratio))
 
     if blk_cfg['residual'] is not None:  # with residual connection
         if 'kernel_size' in blk_cfg['residual']:  # the conv case

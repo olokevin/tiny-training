@@ -46,8 +46,8 @@ run_config:
   # optimizer_name: sgd_scale
   # optimizer_name: sgd_scale_nomom
 
-  optimizer_name: sgd_scale_int
-  # optimizer_name: sgd_scale_int_nomom
+  # optimizer_name: sgd_scale_int
+  optimizer_name: sgd_scale_int_nomom
 
 net_config:
   net_name: mcunet-5fps
@@ -61,7 +61,8 @@ backward_config:
   # enable_backward_config: 1  
   # n_bias_update: 22
   # manual_weight_idx: 21-24-27-30-36-39
-  # weight_update_ratio: 1-1-1-1-0.125-0.25
+  # # weight_update_ratio: 1-1-1-1-0.125-0.25
+  # weight_update_ratio: 1-1-1-1-1-1
 
   # sparse update 
   # enable_backward_config: 1  
@@ -80,14 +81,16 @@ backward_config:
   # n_bias_update: 22
   # n_weight_update: 0
 
-  enable_backward_config: 1
-  n_bias_update: 0
-  n_weight_update: 0
+  # enable_backward_config: 1
+  # n_bias_update: 0
+  # n_weight_update: 0
 
-  # enable_backward_config: 0
+  enable_backward_config: 0
 
 train_config:
-  train_scale: 1
+  grad_output_prune_ratio: 0.9
+
+  # train_scale: 1
   # train_normalization: 1
 
   # normalization_func: BN
@@ -107,7 +110,7 @@ train_config:
   }
   
 ZO_Estim:
-  en: True
+  # en: True
 
   # fc_bp: False
   fc_bp: cls_only

@@ -65,6 +65,8 @@ backward_config:  # for partial backward
   only_update_selected_bias: 0
 
 train_config:
+  grad_output_prune_ratio: null
+
   train_scale: 0
   train_zero: 0
   train_normalization: 0

@@ -6,7 +6,7 @@
   "configurations": [
     {
       "name": "transfer",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "program": "train_cls.py",
       "console": "integratedTerminal",
@@ -20,7 +20,7 @@
     },
     {
       "name": "vww",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "program": "train_cls.py",
       "console": "integratedTerminal",
