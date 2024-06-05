@@ -236,8 +236,8 @@ class ClassificationTrainer(BaseTrainer):
                     print('\nWeight Norm')
                     print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
                     print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
-
                     print('ZO_weight_grad norm:', torch.linalg.norm(ZO_weight_grad))
+
                     print('\nBias Norm')
                     print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
                     print('FO_bias_grad norm:', torch.linalg.norm(FO_bias_grad))

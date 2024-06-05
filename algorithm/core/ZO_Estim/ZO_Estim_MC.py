@@ -362,8 +362,6 @@ class ZO_Estim_MC(nn.Module):
             else:
                 ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, local_backward_args=True)
             
-            ZO_grad = ZO_grad / 100
-            
             ##### Update gradient
             batch_sz = ZO_grad.shape[0]
             
@@ -616,6 +614,11 @@ class ZO_Estim_MC(nn.Module):
         else:
             raise NotImplementedError('Unknown sample method')
         
+        if configs.train_config.grad_output_prune_ratio is not None:
+            ZO_grad = ZO_grad * 4 / int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+        else:
+            ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
+        
         if local_backward_args == True:
             return ZO_grad, pre_activ, mask
         else:
@@ -744,6 +747,11 @@ class ZO_Estim_MC(nn.Module):
             mask = mask.view(post_actv_shape)
         else:
             raise NotImplementedError('Unknown sample method')
+
+        if configs.train_config.grad_output_prune_ratio is not None:
+            ZO_grad = ZO_grad * 4 / int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+        else:
+            ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
         
         if local_backward_args == True:
             return ZO_grad, pre_activ, mask

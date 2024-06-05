@@ -29,7 +29,7 @@ data_provider:
 
 run_config:
   # warmup_epochs: 5
-  n_epochs: 150
+  n_epochs: 1000
   bs256_lr: 0.1
   # bs256_lr: 0.01
 
@@ -70,23 +70,23 @@ backward_config:
   # n_weight_update: 6
 
   # update last 6 blocks
-  enable_backward_config: 1 
-  n_bias_update: 18
-  n_weight_update: 18
+  # enable_backward_config: 1 
+  # n_bias_update: 18
+  # n_weight_update: 18
 
   # update last 12 weights and biases (best setting for last k layers): 87.74%, uses 448KB
   # enable_backward_config: 1 
   # n_bias_update: 22
   # n_weight_update: 0
 
-  # enable_backward_config: 1
-  # n_bias_update: 0
-  # n_weight_update: 0
+  enable_backward_config: 1
+  n_bias_update: 0
+  n_weight_update: 0
 
   # enable_backward_config: 0
 
 train_config:
-  grad_output_prune_ratio: 0.99
+  grad_output_prune_ratio: 0.9
 
   # train_scale: 1
   # train_normalization: 1
@@ -108,11 +108,11 @@ train_config:
   }
   
 ZO_Estim:
-  # en: True
+  en: True
 
   # fc_bp: False
-  # fc_bp: cls_only
-  fc_bp: 'partial_BP'
+  fc_bp: cls_only
+  # fc_bp: 'partial_BP'
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
@@ -133,12 +133,13 @@ ZO_Estim:
 
   # trainable_layer_list: ['1.8']
   # trainable_layer_list: ['1.12', '1.13']
+  # trainable_layer_list: ['1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13']
   # trainable_layer_list: ['1.8.conv.0']
-  # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
-  trainable_layer_list: ['1.7.conv.2', '1.8.conv.2', '1.9.conv.2', '1.10.conv.2', '1.12.conv.2', '1.13.conv.2']
+  trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
+  # trainable_layer_list: ['1.7.conv.2', '1.8.conv.2', '1.9.conv.2', '1.10.conv.2', '1.12.conv.2', '1.13.conv.2']
   # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
 
-  # estimate_method: forward`
+  # estimate_method: forward
   estimate_method: antithetic
 
   # sample_method: uniform
