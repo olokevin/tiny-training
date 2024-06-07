@@ -64,17 +64,17 @@ backward_config:
   # # weight_update_ratio: 1-1-1-1-0.125-0.25
   # weight_update_ratio: 1-1-1-1-1-1
 
-  # update last 2 blocks (best setting for last k layers): 87.74%, uses 448KB
+  # update last 2 blocks
   # enable_backward_config: 1 
   # n_bias_update: 6
   # n_weight_update: 6
 
-  # update last 6 blocks
-  # enable_backward_config: 1 
-  # n_bias_update: 18
-  # n_weight_update: 18
-
   # update last 12 weights and biases (best setting for last k layers): 87.74%, uses 448KB
+  # enable_backward_config: 1 
+  # n_bias_update: 12
+  # n_weight_update: 12
+
+  # bias-only
   # enable_backward_config: 1 
   # n_bias_update: 22
   # n_weight_update: 0
@@ -86,7 +86,7 @@ backward_config:
   # enable_backward_config: 0
 
 train_config:
-  grad_output_prune_ratio: 0.9
+  grad_output_prune_ratio: 0.5
 
   # train_scale: 1
   # train_normalization: 1
