@@ -514,6 +514,9 @@ class ZO_Estim_MC(nn.Module):
         post_actv = post_actv.view(batch_sz, -1)
         mask = mask.view(batch_sz, -1)
 
+        if self.estimate_method == 'forward':
+            _, old_loss = self.obj_fn(starting_idx=splited_block.idx, input=block_in, return_loss_reduction='none')
+
         ZO_grad = torch.zeros_like(post_actv, device=self.device)
         if self.sample_method == 'coord_basis':
             for i in range(post_actv.shape[1]):
@@ -530,20 +533,16 @@ class ZO_Estim_MC(nn.Module):
 
                 _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
                 self.forward_counter += 1
+                post_actv[:, i] = org_post_actv
 
                 if self.estimate_method == 'forward':
-                    post_actv[:, i] = org_post_actv
-                    _, old_loss = self.obj_fn(return_loss_reduction='none')
-
                     for batch_idx in range(batch_sz):
                         if ((pos_loss[batch_idx] - old_loss[batch_idx]) != 0) & (pos_distance[batch_idx] != 0):
                             ZO_grad[batch_idx,i] = (pos_loss[batch_idx] - neg_loss[batch_idx]) / pos_distance[batch_idx]
                         else:
                             ZO_grad[batch_idx,i] = 0
 
-                    post_actv[:, i] = org_post_actv
                 elif self.estimate_method == 'antithetic':
-                    post_actv[:, i] = org_post_actv
                     post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
                     if splited_block.type == QuantizedMbBlock:
                         a_bit = splited_block.block.conv[conv_idx].a_bit
@@ -591,15 +590,12 @@ class ZO_Estim_MC(nn.Module):
 
                 _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
                 self.forward_counter += 1
+                post_actv = org_post_actv
 
                 if self.estimate_method == 'forward':
-                    post_actv = org_post_actv
-                    _, old_loss = self.obj_fn(return_loss_reduction='none')
-                    
                     ZO_grad += (pos_loss - old_loss).view(-1,1) / self.sigma * u
 
                 elif self.estimate_method == 'antithetic':
-                    post_actv = org_post_actv
                     post_actv = post_actv - u * self.sigma
 
                     if splited_block.type == QuantizedMbBlock:
