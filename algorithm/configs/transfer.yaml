@@ -25,6 +25,7 @@ data_provider:
   # dataset: cifar10
   # num_classes: 10
 
+  # base_batch_size: 1
   base_batch_size: 128
 
 run_config:

@@ -341,6 +341,8 @@ class ZO_Estim_MC(nn.Module):
     
     
     def get_actv_ZO_gradient(self, verbose=False):
+        if self.estimate_method == 'forward':
+            _, old_loss = self.obj_fn(return_loss_reduction='none')
         for trainable_layer_name in self.trainable_layer_list:
             trainable_layer_name = trainable_layer_name.split('.')
             block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
@@ -357,10 +359,10 @@ class ZO_Estim_MC(nn.Module):
             ##### Estimate gradient
             # Update all conv layers in this block
             if conv_idx == None:
-                ZO_grad, pre_activ, mask = self.get_block_actv_ZO_gradint(splited_block, local_backward_args=True)
+                ZO_grad, pre_activ, mask = self.get_block_actv_ZO_gradint(splited_block, old_loss, local_backward_args=True)
             # Update single conv layer
             else:
-                ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, local_backward_args=True)
+                ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, old_loss, local_backward_args=True)
             
             ##### Update gradient
             batch_sz = ZO_grad.shape[0]
@@ -476,7 +478,7 @@ class ZO_Estim_MC(nn.Module):
                 raise NotImplementedError('Unknown block type')      
         return None
 
-    def get_layer_actv_ZO_gradint(self, splited_block, conv_idx, local_backward_args=False):
+    def get_layer_actv_ZO_gradint(self, splited_block, conv_idx, old_loss, local_backward_args=False):
         assert splited_block.type == QuantizedMbBlock
         block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
         pre_activ = splited_block.block.conv[:conv_idx](block_in)
@@ -489,10 +491,10 @@ class ZO_Estim_MC(nn.Module):
             mask = torch.zeros_like(post_actv, dtype=torch.bool)
             
             ### Depthwise filter magnitude top-k sparsity
-            dw_channelwise = splited_block.block.conv[conv_idx+1].weight.abs().sum([1,2,3])
-            topk_dim = int((1.0-grad_output_prune_ratio) * dw_channelwise.numel())
-            _, indices = torch.topk(dw_channelwise, topk_dim)
-            mask[:,indices,:,:] = True
+            # dw_channelwise = splited_block.block.conv[conv_idx+1].weight.abs().sum([1,2,3])
+            # topk_dim = int((1.0-grad_output_prune_ratio) * dw_channelwise.numel())
+            # _, indices = torch.topk(dw_channelwise, topk_dim)
+            # mask[:,indices,:,:] = True
             
             ### Output actv magnitude top-k sparsity
             # topk_dim = int((1.0-grad_output_prune_ratio) * post_actv.numel())
@@ -500,22 +502,19 @@ class ZO_Estim_MC(nn.Module):
             # mask.view(-1)[indices] = True
 
             ### Output actv magnitude top-k sparsity, batch-wise
-            # batch_sz = post_actv.shape[0]
-            # topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
-            # for b in range(batch_sz):
-            #     _, indices = torch.topk((post_actv[b]-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
-            #     mask[b].view(-1)[indices] = True
+            batch_sz = post_actv.shape[0]
+            topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+            for b in range(batch_sz):
+                _, indices = torch.topk((post_actv[b]-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
+                mask[b].view(-1)[indices] = True
         else:
-            mask = splited_block.block.conv[conv_idx].binary_mask.int()
+            mask = splited_block.block.conv[conv_idx].binary_mask
             # mask = torch.ones_like(post_actv)
 
         post_actv_shape = tuple(post_actv.shape)
         batch_sz = post_actv_shape[0]
         post_actv = post_actv.view(batch_sz, -1)
         mask = mask.view(batch_sz, -1)
-
-        if self.estimate_method == 'forward':
-            _, old_loss = self.obj_fn(starting_idx=splited_block.idx, input=block_in, return_loss_reduction='none')
 
         ZO_grad = torch.zeros_like(post_actv, device=self.device)
         if self.sample_method == 'coord_basis':
@@ -629,7 +628,7 @@ class ZO_Estim_MC(nn.Module):
         else:
             return ZO_grad
     
-    def get_block_actv_ZO_gradint(self, splited_block, local_backward_args=False):
+    def get_block_actv_ZO_gradint(self, splited_block, old_loss, local_backward_args=False):
         assert splited_block.type == QuantizedMbBlock
 
         pre_activ = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
@@ -674,10 +673,9 @@ class ZO_Estim_MC(nn.Module):
 
                 _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
                 self.forward_counter += 1
+                post_actv[:, i] = org_post_actv
 
                 if self.estimate_method == 'forward':
-                    post_actv[:, i] = org_post_actv
-                    _, old_loss = self.obj_fn(return_loss_reduction='none')
 
                     for batch_idx in range(batch_sz):
                         if ((pos_loss[batch_idx] - old_loss[batch_idx]) != 0) & (pos_distance[batch_idx] != 0):
@@ -686,7 +684,6 @@ class ZO_Estim_MC(nn.Module):
                             ZO_grad[batch_idx,i] = 0
 
                 elif self.estimate_method == 'antithetic':
-                    post_actv[:, i] = org_post_actv
 
                     post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
                     a_bit = splited_block.block.a_bit
@@ -726,11 +723,9 @@ class ZO_Estim_MC(nn.Module):
 
                 _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
                 self.forward_counter += 1
+                post_actv = org_post_actv
 
                 if self.estimate_method == 'forward':
-                    post_actv = org_post_actv
-                    _, old_loss = self.obj_fn(return_loss_reduction='none')
-                    
                     ZO_grad += (pos_loss - old_loss).view(-1,1) / self.sigma * u
 
                 elif self.estimate_method == 'antithetic':
