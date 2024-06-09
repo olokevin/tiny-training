@@ -71,62 +71,52 @@ class ClassificationTrainer(BaseTrainer):
             for batch_idx, (images, labels) in enumerate(self.data_loader['train']):
                 images, labels = images.cuda(), labels.cuda()
                 self.optimizer.zero_grad()
-
-                # output_sizes = []
-                # splited_models = split_model(self.model)
-                # x = images
-                # output_sizes.append(x.size())
-                # for layer in splited_models:
-                #     x = layer(x)
-                #     output_sizes.append(x.size())
-                #     # print the name and the size of the output
-                #     print(f'Output size: {x.size()}')
                 
                 if self.ZO_Estim is None:
-                    output = self.model(images)
-                    loss = self.criterion(output, labels)
-                    # backward and update
-                    loss.backward()
+                    if configs.train_config.layerwise_update is None:
+                        output = self.model(images)
+                        loss = self.criterion(output, labels)
+                        # backward and update
+                        loss.backward()
 
-                    # partial update config
-                    if configs.backward_config.enable_backward_config:
-                        from core.utils.partial_backward import apply_backward_config
-                        apply_backward_config(self.model, configs.backward_config)
-                    
-                    if configs.backward_config.train_cls == 0:
-                        self.model[-2].weight.grad = None
-                        self.model[-2].bias.grad = None
-                    
-                    # if configs.train_config.train_scale or configs.train_config.train_zero or configs.train_config.train_normalization:
-                    #     signSGD = configs.ZO_Estim.signSGD
-                    #     param_lr = configs.train_config.param_lr
-                    #     for splited_block in self.model.splited_block_list:
-                    #         block_idx = splited_block.idx
+                        # partial update config
+                        if configs.backward_config.enable_backward_config:
+                            from core.utils.partial_backward import apply_backward_config
+                            apply_backward_config(self.model, configs.backward_config)
+                    else:
+                        ##### Layerwise update #####
+                        for layer in self.model.modules():
+                            if isinstance(layer, torch.nn.Conv2d):
+                                layer.weight.requires_grad = False
+                                layer.bias.requires_grad = False
+                        
+                        lr = self.optimizer.param_groups[0]['lr']
+                        # layerwise update each conv layer
+                        for layer_name in configs.train_config.layerwise_update_layer_list:
+                            name_list = layer_name.split('.')
+                            this_layer = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])]
+                            this_layer.weight.requires_grad = True
+                            this_layer.bias.requires_grad = True
 
-                    #         if block_idx == 0:
-                    #             # First conv layer
-                    #             splited_block.block.update_quantize_params(signSGD, param_lr)
-                    #         elif block_idx > 0:
-                    #             # residual blocks
-                    #             if type(splited_block.block) == QuantizedMbBlock:
-                    #                 last_splited_block = self.model.splited_block_list[block_idx-1]
-                    #                 if type(last_splited_block.block) == QuantizedMbBlock:
-                    #                     if last_splited_block.block.q_add is not None:
-                    #                         block_input_scale = last_splited_block.block.q_add.scale_y
-                    #                         block_input_zero = last_splited_block.block.q_add.zero_y
-                    #                     else:
-                    #                         block_input_scale = last_splited_block.block.conv[-1].scale_y
-                    #                         block_input_zero = last_splited_block.block.conv[-1].zero_y
-                    #                 elif type(last_splited_block.block) == QuantizedConv2d:
-                    #                     block_input_scale = last_splited_block.block.scale_y
-                    #                     block_input_zero = last_splited_block.block.zero_y
-                    #                 else:
-                    #                     raise NotImplementedError('Unknown block type')
-                                    
-                    #                 splited_block.block.block_input_update_quantize_params(block_input_scale, block_input_zero)
-                    #                 splited_block.block.block_conv_update_quantize_params(signSGD, param_lr)
-                    #             else:
-                    #                 pass
+                            output = self.model(images)
+                            loss = self.criterion(output, labels)
+                            # backward and update
+                            loss.backward()
+
+                            this_layer.weight.data.sub_( (lr * this_layer.weight.grad.data / this_layer.scale_w.view(-1, 1, 1, 1) ** 2).round() )
+                            this_layer.bias.data.sub_( (lr * this_layer.bias.grad.data / (this_layer.scale_x * this_layer.scale_w) ** 2).round() )
+
+                            self.optimizer.zero_grad()
+
+                            this_layer.weight.requires_grad = False
+                            this_layer.bias.requires_grad = False
+                        
+                        # update classifier layer (other layers requires_grad = False)
+                        output = self.model(images)
+                        loss = self.criterion(output, labels)
+                        # backward and update
+                        loss.backward()
+ 
                 else:
                     ##### break BP #####
                     if configs.ZO_Estim.fc_bp == 'break_BP':

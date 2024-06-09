@@ -60,12 +60,12 @@ backward_config:  # for partial backward
   manual_weight_idx: null
   quantize_gradient: 0
   freeze_fc: 0
-
-  train_cls: 1
   only_update_selected_bias: 0
 
 train_config:
   grad_output_prune_ratio: null
+
+  layerwise_update: null
 
   train_scale: 0
   train_zero: 0

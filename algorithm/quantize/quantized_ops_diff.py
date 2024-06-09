@@ -160,15 +160,15 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
             if grad_output_prune_ratio is not None:
                 topk_mask = torch.zeros_like(out, dtype=torch.bool)
 
-                topk_dim = int((1.0-grad_output_prune_ratio) * out.numel())
-                _, indices = torch.topk(out.flatten(), topk_dim)
-                topk_mask.view(-1)[indices] = True
+                # topk_dim = int((1.0-grad_output_prune_ratio) * out.numel())
+                # _, indices = torch.topk(out.flatten(), topk_dim)
+                # topk_mask.view(-1)[indices] = True
 
-                # batch_sz = out.shape[0]
-                # topk_dim = int((1.0-grad_output_prune_ratio) * (out.numel() / batch_sz))
-                # for b in range(batch_sz):
-                #     _, indices = torch.topk(out[b].flatten(), topk_dim)
-                #     topk_mask[b].view(-1)[indices] = True
+                batch_sz = out.shape[0]
+                topk_dim = int((1.0-grad_output_prune_ratio) * (out.numel() / batch_sz))
+                for b in range(batch_sz):
+                    _, indices = torch.topk(out[b].flatten(), topk_dim)
+                    topk_mask[b].view(-1)[indices] = True
 
                 ctx.save_for_backward(weight, effective_scale, x, topk_mask)
             else:

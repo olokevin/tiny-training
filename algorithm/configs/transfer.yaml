@@ -30,7 +30,8 @@ data_provider:
 
 run_config:
   # warmup_epochs: 5
-  n_epochs: 1000
+  n_epochs: 100
+  # n_epochs: 4000
   bs256_lr: 0.1
   # bs256_lr: 0.01
 
@@ -89,6 +90,10 @@ backward_config:
 train_config:
   grad_output_prune_ratio: 0.9
 
+  # layerwise_update: 1
+  # layerwise_update_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
+  # layerwise_update_layer_list: ['1.6.conv.0', '1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.11.conv.0', '1.12.conv.0', '1.13.conv.0']
+
   # train_scale: 1
   # train_normalization: 1
 
@@ -109,7 +114,7 @@ train_config:
   }
   
 ZO_Estim:
-  en: True
+  # en: True
 
   # fc_bp: False
   fc_bp: cls_only
