@@ -49,6 +49,6 @@ class SGDScaleInt(torch.optim.SGD):
         for m in model.modules():
             if isinstance(m, QuantizedConv2dDiff):
                 if m.bias.grad is not None:
-                    m.bias.data = m.bias.data.round()
+                    m.bias.data = m.bias.data.round().clamp(- 2 ** (4*m.w_bit - 1), 2 ** (4*m.w_bit - 1) - 1)
                 if m.weight.grad is not None:
-                    m.weight.data = m.weight.data.round()
+                    m.weight.data = m.weight.data.round().clamp(- 2 ** (m.w_bit - 1), 2 ** (m.w_bit - 1) - 1)

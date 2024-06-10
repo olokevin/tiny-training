@@ -60,11 +60,11 @@ backward_config:
   # quantize_gradient: 1
 
   # sparse update (100KB scheme): 88.84%
-  # enable_backward_config: 1  
-  # n_bias_update: 22
-  # manual_weight_idx: 21-24-27-30-36-39
-  # # weight_update_ratio: 1-1-1-1-0.125-0.25
-  # weight_update_ratio: 1-1-1-1-1-1
+  enable_backward_config: 1  
+  n_bias_update: 22
+  manual_weight_idx: 21-24-27-30-36-39
+  # weight_update_ratio: 1-1-1-1-0.125-0.25
+  weight_update_ratio: 1-1-1-1-1-1
 
   # update last 2 blocks
   # enable_backward_config: 1 
@@ -81,17 +81,17 @@ backward_config:
   # n_bias_update: 22
   # n_weight_update: 0
 
-  enable_backward_config: 1
-  n_bias_update: 0
-  n_weight_update: 0
+  # enable_backward_config: 1
+  # n_bias_update: 0
+  # n_weight_update: 0
 
   # enable_backward_config: 0
 
 train_config:
-  grad_output_prune_ratio: 0.9
+  # grad_output_prune_ratio: 0.9
 
-  # layerwise_update: 1
-  # layerwise_update_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
+  layerwise_update: 1
+  layerwise_update_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
   # layerwise_update_layer_list: ['1.6.conv.0', '1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.11.conv.0', '1.12.conv.0', '1.13.conv.0']
 
   # train_scale: 1

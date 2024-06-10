@@ -371,6 +371,7 @@ class ZO_Estim_MC(nn.Module):
                 splited_block.block.weight.grad = torch.matmul(ZO_grad.T, pre_activ) / batch_sz  # average over all batch!
                 splited_block.block.bias.grad = torch.mean(ZO_grad, dim=0)
             elif splited_block.type == QuantizedMbBlock:
+                ### Block-wise ZO estimation        
                 if conv_idx == None:
                     if splited_block.block.q_add is not None:
                         ZO_grad = ZO_grad * splited_block.block.q_add.scale_x2 / splited_block.block.q_add.scale_y
@@ -422,7 +423,7 @@ class ZO_Estim_MC(nn.Module):
                         
                         splited_block.block.conv[idx].weight.grad = grad_w
                         splited_block.block.conv[idx].bias.grad = grad_bias 
-                        
+                ### layer-wise ZO estimation        
                 else:
                     grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad, binary_mask=splited_block.block.conv[conv_idx].binary_mask)
                     
@@ -474,6 +475,7 @@ class ZO_Estim_MC(nn.Module):
 
                     splited_block.block.conv[conv_idx].weight.grad = grad_w
                     splited_block.block.conv[conv_idx].bias.grad = grad_bias
+
             else:
                 raise NotImplementedError('Unknown block type')      
         return None
