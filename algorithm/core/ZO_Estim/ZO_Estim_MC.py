@@ -1,6 +1,7 @@
 from typing import Callable
 
 import math
+import random
 import numpy as np
 import torch
 from torch import nn
@@ -116,7 +117,7 @@ class ZO_Estim_MC(nn.Module):
 
         self.device = next(self.model.parameters()).device
         self.dtype = next(self.model.parameters()).dtype
-
+        self.param_lr = None
 
         # self.ZO_dimension = sum(p.numel() for p in filter(lambda x: x.requires_grad, self.model.parameters()))
         self.ZO_dimension = sum(p.numel() for name, p in self.model.named_parameters() if name in self.trainable_param_list)
@@ -341,9 +342,13 @@ class ZO_Estim_MC(nn.Module):
     
     
     def get_actv_ZO_gradient(self, verbose=False):
-        if self.estimate_method == 'forward':
-            _, old_loss = self.obj_fn(return_loss_reduction='none')
-        for trainable_layer_name in self.trainable_layer_list:
+
+        if configs.train_config.layerwise_update == 'one':
+            trainable_layer_list = [random.choice(self.trainable_layer_list)]
+        else:
+            trainable_layer_list = self.trainable_layer_list
+        
+        for trainable_layer_name in trainable_layer_list:
             trainable_layer_name = trainable_layer_name.split('.')
             block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
             if 'conv' in trainable_layer_name:
@@ -359,10 +364,10 @@ class ZO_Estim_MC(nn.Module):
             ##### Estimate gradient
             # Update all conv layers in this block
             if conv_idx == None:
-                ZO_grad, pre_activ, mask = self.get_block_actv_ZO_gradint(splited_block, old_loss, local_backward_args=True)
+                ZO_grad, pre_activ, mask = self.get_block_actv_ZO_gradint(splited_block, local_backward_args=True)
             # Update single conv layer
             else:
-                ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, old_loss, local_backward_args=True)
+                ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, local_backward_args=True)
             
             ##### Update gradient
             batch_sz = ZO_grad.shape[0]
@@ -473,18 +478,30 @@ class ZO_Estim_MC(nn.Module):
                         print('ZO_weight_grad norm:', torch.linalg.norm(grad_bias))
                         print('ZO/FO: ', torch.linalg.norm(grad_bias)/torch.linalg.norm(FO_bias_grad))
 
-                    splited_block.block.conv[conv_idx].weight.grad = grad_w
-                    splited_block.block.conv[conv_idx].bias.grad = grad_bias
+                    
+
+                    if configs.train_config.layerwise_update is None:
+                        splited_block.block.conv[conv_idx].weight.grad = grad_w
+                        splited_block.block.conv[conv_idx].bias.grad = grad_bias
+                    else:
+                        ##### layerwise update
+                        this_layer = splited_block.block.conv[conv_idx]
+                        lr = self.param_lr
+                        this_layer.weight.data.sub_( (lr * grad_w / this_layer.scale_w.view(-1, 1, 1, 1) ** 2).round().clamp(- 2 ** (this_layer.w_bit - 1), 2 ** (this_layer.w_bit - 1) - 1) )
+                        this_layer.bias.data.sub_( (lr * grad_bias / (this_layer.scale_x * this_layer.scale_w) ** 2).round().clamp(- 2 ** (4*this_layer.w_bit - 1), 2 ** (4*this_layer.w_bit - 1) - 1) )
 
             else:
                 raise NotImplementedError('Unknown block type')      
         return None
 
-    def get_layer_actv_ZO_gradint(self, splited_block, conv_idx, old_loss, local_backward_args=False):
+    def get_layer_actv_ZO_gradint(self, splited_block, conv_idx, local_backward_args=False):
         assert splited_block.type == QuantizedMbBlock
         block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
         pre_activ = splited_block.block.conv[:conv_idx](block_in)
         post_actv = splited_block.block.conv[conv_idx](pre_activ)
+
+        if self.estimate_method == 'forward':
+            _, old_loss = self.obj_fn(starting_idx=splited_block.idx, input=block_in, return_loss_reduction='none')
 
         assert type(self.sigma) is int
 
@@ -630,11 +647,14 @@ class ZO_Estim_MC(nn.Module):
         else:
             return ZO_grad
     
-    def get_block_actv_ZO_gradint(self, splited_block, old_loss, local_backward_args=False):
+    def get_block_actv_ZO_gradint(self, splited_block, local_backward_args=False):
         assert splited_block.type == QuantizedMbBlock
 
         pre_activ = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
         post_actv = splited_block.block(pre_activ)
+
+        if self.estimate_method == 'forward':
+            _, old_loss = self.obj_fn(starting_idx=splited_block.idx, input=pre_activ, return_loss_reduction='none')
 
         assert type(self.sigma) is int
         assert hasattr(splited_block.block, 'binary_mask')
@@ -836,6 +856,7 @@ class ZO_Estim_MC(nn.Module):
         elif sample_method == 'bernoulli':
             for i in range(self.n_sample):
                 u = self._sample_unit_sphere_quantized(param_vec.shape, sample_method, self.device)
+                # u = u / math.sqrt((self.n_sample + u.numel() - 1) / 4 / self.n_sample)
                 old_param_vec = param_vec * 1
                 # pos
                 param_vec.add_(u * sigma)
@@ -852,7 +873,7 @@ class ZO_Estim_MC(nn.Module):
 
                     param_ZO_grad += (pos_loss - neg_loss) / 2 / sigma * u
             param_ZO_grad = param_ZO_grad / self.n_sample
-            # param_ZO_grad = param_ZO_grad / 8
+            # param_ZO_grad = param_ZO_grad / 500
         else:
             return NotImplementedError('sample method not implemented yet')
 
@@ -924,16 +945,13 @@ class ZO_Estim_MC(nn.Module):
 
                     param_ZO_grad += (pos_loss - neg_loss) / 2 / sigma * u
             param_ZO_grad = param_ZO_grad / self.n_sample
-            # param_ZO_grad = param_ZO_grad / 8
         else:
             return NotImplementedError('sample method not implemented yet')
 
         param_ZO_grad = param_ZO_grad.view(param_shape)
         return param_ZO_grad
     
-    def get_layer_param_ZO_gradient(self, block_idx, trainable_layer, block_in, old_loss, trainable_param_list, estimate_method, sample_method):
-        param_ZO_grad_dict = dict()
-        
+    def get_layer_param_ZO_gradient(self, block_idx, trainable_layer, block_in, old_loss, trainable_param_list, estimate_method, sample_method):        
         for trainable_param_name in trainable_param_list:
             if hasattr(trainable_layer, trainable_param_name) == False:
                 break
@@ -941,21 +959,17 @@ class ZO_Estim_MC(nn.Module):
                 param = getattr(trainable_layer, trainable_param_name)
                 if isinstance(self.sigma, dict):
                     sigma = self.sigma[trainable_param_name]
+                else:
+                    sigma = self.sigma
                 
                 if trainable_param_name == 'scale_w':
                     param_ZO_grad = self.get_scale_w_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
                 else:
                     param_ZO_grad = self.get_single_param_ZO_gradient(block_idx, param, block_in, old_loss, sigma, estimate_method, sample_method)
                 
-                param_ZO_grad_dict[trainable_param_name] = param_ZO_grad
-
                 param.grad = param_ZO_grad
-                param_ZO_grad_dict[trainable_param_name] = param_ZO_grad
-            
             if DEBUG:
                 logger.info(f'{trainable_param_name} gradient norm {torch.linalg.norm(param_ZO_grad)}')
-        
-        return param_ZO_grad_dict
     
     def get_param_ZO_gradient(self, old_loss, verbose=False):
 
@@ -977,27 +991,9 @@ class ZO_Estim_MC(nn.Module):
             block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
             
             ##### Estimate gradient
-            param_lr = configs.train_config.param_lr
-
-            if block_idx > 0:
-                last_splited_block = self.splited_block_list[block_idx-1]
-                if type(last_splited_block.block) == QuantizedMbBlock:
-                    if last_splited_block.block.q_add is not None:
-                        block_input_scale = last_splited_block.block.q_add.scale_y
-                        block_input_zero = last_splited_block.block.q_add.zero_y
-                    else:
-                        block_input_scale = last_splited_block.block.conv[-1].scale_y
-                        block_input_zero = last_splited_block.block.conv[-1].zero_y
-                elif type(last_splited_block.block) == QuantizedConv2d:
-                    block_input_scale = last_splited_block.block.scale_y
-                    block_input_zero = last_splited_block.block.zero_y
-                else:
-                    raise NotImplementedError('Unknown block type')
-                
-                splited_block.block.block_input_update_quantize_params(block_input_scale, block_input_zero)
-
-            ##### block
+            
             if conv_idx == None:
+                ##### block
                 for conv_idx in range(len(splited_block.block.conv)):
                     ##### Estimate gradient
                     trainable_layer = splited_block.block.conv[conv_idx] 
@@ -1005,90 +1001,159 @@ class ZO_Estim_MC(nn.Module):
                     
                     ##### conv update
                     if configs.ZO_Estim.param_update_method == 'layerwise':
-                        splited_block.block.conv[conv_idx].update_quantize_params(self.signSGD, param_lr)
-                        try:
-                            splited_block.block.conv[conv_idx+1].scale_x = splited_block.block.conv[conv_idx].scale_y * 1.0
-                            splited_block.block.conv[conv_idx+1].zero_x = splited_block.block.conv[conv_idx].zero_y * 1
-                        except IndexError:
-                            if splited_block.block.q_add is not None:
-                                splited_block.block.q_add.scale_x2 = splited_block.block.conv[conv_idx].scale_y * 1.0
-                                splited_block.block.q_add.zero_x2 = splited_block.block.conv[conv_idx].zero_y * 1
-                
-                ##### q_add update
-                if splited_block.block.q_add is not None:
-                    trainable_layer = splited_block.block.q_add
-                    self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
-                    if configs.ZO_Estim.param_update_method == 'layerwise':
-                        splited_block.block.q_add.update_quantize_params(self.signSGD, param_lr)
-                
-                if configs.ZO_Estim.param_update_method == 'blockwise':
-                    splited_block.block.block_conv_update_quantize_params(self.signSGD, param_lr)
-
-            ##### layer
+                        ##### layerwise update
+                        this_layer = splited_block.block.conv[conv_idx]
+                        lr = self.param_lr
+                        this_layer.weight.data.sub_( (lr * this_layer.weight.grad.data / this_layer.scale_w.view(-1, 1, 1, 1) ** 2).round().clamp(- 2 ** (this_layer.w_bit - 1), 2 ** (this_layer.w_bit - 1) - 1) )
+                        this_layer.bias.data.sub_( (lr * this_layer.bias.grad.data / (this_layer.scale_x * this_layer.scale_w) ** 2).round().clamp(- 2 ** (4*this_layer.w_bit - 1), 2 ** (4*this_layer.w_bit - 1) - 1) )
             else:
+                ##### layer
                 trainable_layer = splited_block.block.conv[conv_idx] 
                 self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
 
                 if configs.ZO_Estim.param_update_method == 'layerwise':
-                    splited_block.block.conv[conv_idx].update_quantize_params(self.signSGD, param_lr)
-                    try:
-                        splited_block.block.conv[conv_idx+1].scale_x = splited_block.block.conv[conv_idx].scale_y * 1.0
-                        splited_block.block.conv[conv_idx+1].zero_x = splited_block.block.conv[conv_idx].zero_y * 1
-                    except IndexError:
-                        if splited_block.block.q_add is not None:
-                            splited_block.block.q_add.scale_x2 = splited_block.block.conv[conv_idx].scale_y * 1.0
-                            splited_block.block.q_add.zero_x2 = splited_block.block.conv[conv_idx].zero_y * 1
-                
-        if configs.ZO_Estim.param_update_method == 'modelwise':
-            for trainable_layer_name in self.trainable_layer_list:
-                trainable_layer_name = trainable_layer_name.split('.')
-                block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
-
-                for splited_block in self.splited_block_list:
-                    if splited_block.name == block_name:
-                        # splited_layer = splited_block
-                        break
+                    ##### layerwise update
+                    this_layer = splited_block.block.conv[conv_idx]
+                    lr = self.param_lr
+                    this_layer.weight.data.sub_( (lr * this_layer.weight.grad.data / this_layer.scale_w.view(-1, 1, 1, 1) ** 2).round().clamp(- 2 ** (this_layer.w_bit - 1), 2 ** (this_layer.w_bit - 1) - 1) )
+                    this_layer.bias.data.sub_( (lr * this_layer.bias.grad.data / (this_layer.scale_x * this_layer.scale_w) ** 2).round().clamp(- 2 ** (4*this_layer.w_bit - 1), 2 ** (4*this_layer.w_bit - 1) - 1) )
                     
-                block_idx = splited_block.idx
-
-                if block_idx == 0:
-                    # First conv layer
-                    splited_block.block.update_quantize_params(self.signSGD, param_lr)
-                elif block_idx > 0:
-                    if type(splited_block.block) == QuantizedMbBlock:
-                        last_splited_block = self.splited_block_list[block_idx-1]
-                        if type(last_splited_block.block) == QuantizedMbBlock:
-                            if last_splited_block.block.q_add is not None:
-                                block_input_scale = last_splited_block.block.q_add.scale_y
-                                block_input_zero = last_splited_block.block.q_add.zero_y
-                            else:
-                                block_input_scale = last_splited_block.block.conv[-1].scale_y
-                                block_input_zero = last_splited_block.block.conv[-1].zero_y
-                        elif type(last_splited_block.block) == QuantizedConv2d:
-                            block_input_scale = last_splited_block.block.scale_y
-                            block_input_zero = last_splited_block.block.zero_y
-                        else:
-                            raise NotImplementedError('Unknown block type')
-                        
-                        splited_block.block.block_input_update_quantize_params(block_input_scale, block_input_zero)
-                        splited_block.block.block_conv_update_quantize_params(self.signSGD, param_lr)
-                    elif type(splited_block.block) == ScaledLinear:
-                        last_ResBlock = self.splited_block_list[block_idx-1]
-                        last_ResBlock_idx = block_idx-1
-                        while type(last_ResBlock.block) != QuantizedMbBlock:
-                            last_ResBlock_idx -= 1
-                            last_ResBlock = self.splited_block_list[last_ResBlock_idx]
-                        
-                        if last_ResBlock.block.q_add is None:
-                            splited_block.block.scale_x = last_ResBlock.block.conv[-1].scale_y * 1.0
-                            splited_block.block.zero_x  = last_ResBlock.block.conv[-1].zero_y * 1
-                        else:
-                            splited_block.block.scale_x = last_ResBlock.block.q_add.scale_y * 1.0
-                            splited_block.block.zero_x  = last_ResBlock.block.q_add.zero_y * 1
-                    else:
-                        pass
-        
         return None
+    
+    # def get_scale_ZO_gradient(self, old_loss, verbose=False):
+
+    #     for trainable_layer_name in self.trainable_layer_list:
+    #         trainable_layer_name = trainable_layer_name.split('.')
+    #         block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
+
+    #         for splited_block in self.splited_block_list:
+    #             if splited_block.name == block_name:
+    #                 # splited_layer = splited_block
+    #                 break
+                
+    #         if 'conv' in trainable_layer_name:
+    #             conv_idx = int(trainable_layer_name[3])
+    #         else:
+    #             conv_idx = None
+            
+    #         block_idx = splited_block.idx
+    #         block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
+            
+    #         ##### Estimate gradient
+    #         if configs.train_config.train_scale:
+    #             ##### Train quantization
+    #             q_param_lr = configs.train_config.q_param_lr
+    #             if block_idx > 0:
+    #                 last_splited_block = self.splited_block_list[block_idx-1]
+    #                 if type(last_splited_block.block) == QuantizedMbBlock:
+    #                     if last_splited_block.block.q_add is not None:
+    #                         block_input_scale = last_splited_block.block.q_add.scale_y
+    #                         block_input_zero = last_splited_block.block.q_add.zero_y
+    #                     else:
+    #                         block_input_scale = last_splited_block.block.conv[-1].scale_y
+    #                         block_input_zero = last_splited_block.block.conv[-1].zero_y
+    #                 elif type(last_splited_block.block) == QuantizedConv2d:
+    #                     block_input_scale = last_splited_block.block.scale_y
+    #                     block_input_zero = last_splited_block.block.zero_y
+    #                 else:
+    #                     raise NotImplementedError('Unknown block type')
+                    
+    #                 splited_block.block.block_input_update_quantize_params(block_input_scale, block_input_zero)
+
+    #         ##### block
+    #         if conv_idx == None:
+    #             for conv_idx in range(len(splited_block.block.conv)):
+    #                 ##### Estimate gradient
+    #                 trainable_layer = splited_block.block.conv[conv_idx] 
+    #                 self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
+                    
+    #                 ##### conv update
+    #                 if configs.ZO_Estim.param_update_method == 'layerwise':
+    #                     splited_block.block.conv[conv_idx].update_quantize_params(self.signSGD, q_param_lr)
+    #                     try:
+    #                         splited_block.block.conv[conv_idx+1].scale_x = splited_block.block.conv[conv_idx].scale_y * 1.0
+    #                         splited_block.block.conv[conv_idx+1].zero_x = splited_block.block.conv[conv_idx].zero_y * 1
+    #                     except IndexError:
+    #                         if splited_block.block.q_add is not None:
+    #                             splited_block.block.q_add.scale_x2 = splited_block.block.conv[conv_idx].scale_y * 1.0
+    #                             splited_block.block.q_add.zero_x2 = splited_block.block.conv[conv_idx].zero_y * 1
+                
+    #             if configs.train_config.train_scale:
+    #                 ##### q_add update
+    #                 if splited_block.block.q_add is not None:
+    #                     trainable_layer = splited_block.block.q_add
+    #                     self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
+    #                     if configs.ZO_Estim.param_update_method == 'layerwise':
+    #                         splited_block.block.q_add.update_quantize_params(self.signSGD, q_param_lr)
+                
+    #             if configs.ZO_Estim.param_update_method == 'blockwise':
+    #                 splited_block.block.block_conv_update_quantize_params(self.signSGD, q_param_lr)
+
+    #         ##### layer
+    #         else:
+    #             trainable_layer = splited_block.block.conv[conv_idx] 
+    #             self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
+
+    #             if configs.ZO_Estim.param_update_method == 'layerwise':
+    #                 splited_block.block.conv[conv_idx].update_quantize_params(self.signSGD, q_param_lr)
+    #                 try:
+    #                     splited_block.block.conv[conv_idx+1].scale_x = splited_block.block.conv[conv_idx].scale_y * 1.0
+    #                     splited_block.block.conv[conv_idx+1].zero_x = splited_block.block.conv[conv_idx].zero_y * 1
+    #                 except IndexError:
+    #                     if splited_block.block.q_add is not None:
+    #                         splited_block.block.q_add.scale_x2 = splited_block.block.conv[conv_idx].scale_y * 1.0
+    #                         splited_block.block.q_add.zero_x2 = splited_block.block.conv[conv_idx].zero_y * 1
+                
+    #     if configs.ZO_Estim.param_update_method == 'modelwise':
+    #         for trainable_layer_name in self.trainable_layer_list:
+    #             trainable_layer_name = trainable_layer_name.split('.')
+    #             block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
+
+    #             for splited_block in self.splited_block_list:
+    #                 if splited_block.name == block_name:
+    #                     # splited_layer = splited_block
+    #                     break
+                    
+    #             block_idx = splited_block.idx
+
+    #             if block_idx == 0:
+    #                 # First conv layer
+    #                 splited_block.block.update_quantize_params(self.signSGD, q_param_lr)
+    #             elif block_idx > 0:
+    #                 if type(splited_block.block) == QuantizedMbBlock:
+    #                     last_splited_block = self.splited_block_list[block_idx-1]
+    #                     if type(last_splited_block.block) == QuantizedMbBlock:
+    #                         if last_splited_block.block.q_add is not None:
+    #                             block_input_scale = last_splited_block.block.q_add.scale_y
+    #                             block_input_zero = last_splited_block.block.q_add.zero_y
+    #                         else:
+    #                             block_input_scale = last_splited_block.block.conv[-1].scale_y
+    #                             block_input_zero = last_splited_block.block.conv[-1].zero_y
+    #                     elif type(last_splited_block.block) == QuantizedConv2d:
+    #                         block_input_scale = last_splited_block.block.scale_y
+    #                         block_input_zero = last_splited_block.block.zero_y
+    #                     else:
+    #                         raise NotImplementedError('Unknown block type')
+                        
+    #                     splited_block.block.block_input_update_quantize_params(block_input_scale, block_input_zero)
+    #                     splited_block.block.block_conv_update_quantize_params(self.signSGD, q_param_lr)
+    #                 elif type(splited_block.block) == ScaledLinear:
+    #                     last_ResBlock = self.splited_block_list[block_idx-1]
+    #                     last_ResBlock_idx = block_idx-1
+    #                     while type(last_ResBlock.block) != QuantizedMbBlock:
+    #                         last_ResBlock_idx -= 1
+    #                         last_ResBlock = self.splited_block_list[last_ResBlock_idx]
+                        
+    #                     if last_ResBlock.block.q_add is None:
+    #                         splited_block.block.scale_x = last_ResBlock.block.conv[-1].scale_y * 1.0
+    #                         splited_block.block.zero_x  = last_ResBlock.block.conv[-1].zero_y * 1
+    #                     else:
+    #                         splited_block.block.scale_x = last_ResBlock.block.q_add.scale_y * 1.0
+    #                         splited_block.block.zero_x  = last_ResBlock.block.q_add.zero_y * 1
+    #                 else:
+    #                     pass
+        
+    #     return None
     
     def update_obj_fn(self, obj_fn):
         self.obj_fn = obj_fn
@@ -1096,34 +1161,29 @@ class ZO_Estim_MC(nn.Module):
     def get_forward_cnt(self):
         return self.forward_counter
     
-    def estimate_grad(self):
+    def update_param_lr(self, param_lr):
+        self.param_lr = param_lr
+    
+    def estimate_grad(self, old_loss):
         
         # self.model.zero_grad()
         
         if self.perturb_method == 'batch':
-            outputs, old_loss = self.obj_fn()
-            self.estim_grads = self.get_batch_ZO_gradient(old_loss)
+            self.estim_grads = self.get_batch_ZO_gradient(old_loss=old_loss)
         
         # no old_loss: actv old_loss should use non-reduced loss
         elif self.perturb_method == 'activation':
-            outputs, old_loss = self.obj_fn()
             self.estim_grads = self.get_actv_ZO_gradient()
         
         elif self.perturb_method == 'param':
-            outputs, old_loss = self.obj_fn()
-            self.estim_grads = self.get_param_ZO_gradient(old_loss)
-      
-        elif self.perturb_method == 'single':
-            outputs, old_loss = self.obj_fn(row=-1)
-            self.estim_grads = self.get_ZO_gradient_single(old_loss)
-            old_loss = torch.mean(old_loss)
+            self.estim_grads = self.get_param_ZO_gradient(old_loss=old_loss)
+
         else:
             raise ValueError('Unknown perturb_method')
         
         # if self.prior_method != 'None':
         #     self.update_prior_mean(self.estim_grads)
         
-        return outputs, old_loss, self.estim_grads
     
     def update_grad(self):
         if self.perturb_method == 'batch':
@@ -1148,59 +1208,3 @@ class ZO_Estim_MC(nn.Module):
                     u_idx += param_len
         else:
             pass
-    
-
-    # def get_ZO_gradient_single(self, old_loss, verbose=False):
-    #     dimension = self.ZO_dimension
-    #     device = self.device
-    #     batch_sz = self.obj_fn(row=0, get_batch_sz=True)
-    #     ZO_grad = torch.zeros(dimension, device=device)
-
-    #     self.sampler = self._init_sampler(dimension=dimension)
-
-    #     if self.sample_method == 'coord_basis':
-    #         N_ZO = dimension
-    #     else:
-    #         N_ZO = self.n_sample
-
-    #     loss_diff_seq = torch.zeros(N_ZO, device=device)
-
-    #     for n in range(N_ZO):
-    #         for i_row in range(batch_sz):
-    #             u = self._sample_unit_sphere(dimension, device)
-    #             # Add perturbation
-    #             self._add_params_perturbation(self.sigma, u)
-                
-    #             self.model.zero_grad()
-    #             with torch.no_grad():
-    #                 _, pos_loss = self.obj_fn(row=i_row)
-    #             self.forward_counter += 1
-    #             # remove perturbation
-    #             self._add_params_perturbation(self.sigma, -u)
-
-    #             if self.estimate_method == 'one_point':
-    #                 loss_diff = pos_loss
-    #             elif self.estimate_method == 'forward':
-    #                 loss_diff = pos_loss - old_loss[i_row]
-    #             elif self.estimate_method == 'antithetic':
-    #                 # neg perturbation
-    #                 self._add_params_perturbation(self.sigma, -u)
-    #                 self.model.zero_grad()
-    #                 with torch.no_grad():
-    #                     _, neg_loss = self.obj_fn(row=i_row)
-    #                 self.forward_counter += 1
-    #                 # remove perturbation
-    #                 self._add_params_perturbation(self.sigma, u)
-
-    #                 loss_diff = (pos_loss - neg_loss) / 2
-                
-    #             # loss_diff_seq[n] = loss_diff / self.sigma
-
-    #             ZO_grad = ZO_grad + dimension * loss_diff * u / self.sigma / batch_sz / self.n_sample
-    #             # ZO_grad = ZO_grad + math.sqrt(dimension) * loss_diff * u / self.sigma / batch_sz / self.n_sample
-    #             # ZO_grad = ZO_grad + loss_diff * u / self.sigma / batch_sz / self.n_sample
-
-    #     if verbose == False:
-    #         return ZO_grad
-    #     else:
-    #         return ZO_grad, loss_diff_seq

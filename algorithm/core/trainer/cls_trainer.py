@@ -1,5 +1,6 @@
 from tqdm import tqdm
 import math
+import random
 import torch
 import torch.nn.functional as F
 
@@ -15,7 +16,7 @@ from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
 from quantize.quantized_ops_diff import _TruncateActivationRange
 
 PARAM_GRAD_DEBUG = None
-# PARAM_GRAD_DEBUG = True
+PARAM_GRAD_DEBUG = True
 
 OUT_GRAD_DEBUG = None
 # OUT_GRAD_DEBUG = True
@@ -91,8 +92,14 @@ class ClassificationTrainer(BaseTrainer):
                                 layer.bias.requires_grad = False
                         
                         lr = self.optimizer.param_groups[0]['lr']
+
+                        if configs.train_config.layerwise_update == 'all':
+                            layer_name_list = configs.train_config.layerwise_update_layer_list
+                        elif configs.train_config.layerwise_update == 'one':
+                            layer_name_list = [random.choice(configs.train_config.layerwise_update_layer_list),]
+                        
                         # layerwise update each conv layer
-                        for layer_name in configs.train_config.layerwise_update_layer_list:
+                        for layer_name in layer_name_list:
                             name_list = layer_name.split('.')
                             this_layer = self.model[int(name_list[0])][int(name_list[1])].conv[int(name_list[3])]
                             this_layer.weight.requires_grad = True
@@ -103,8 +110,8 @@ class ClassificationTrainer(BaseTrainer):
                             # backward and update
                             loss.backward()
 
-                            this_layer.weight.data.sub_( (lr * this_layer.weight.grad.data / this_layer.scale_w.view(-1, 1, 1, 1) ** 2).round() )
-                            this_layer.bias.data.sub_( (lr * this_layer.bias.grad.data / (this_layer.scale_x * this_layer.scale_w) ** 2).round() )
+                            this_layer.weight.data.sub_( (lr * this_layer.weight.grad.data / this_layer.scale_w.view(-1, 1, 1, 1) ** 2).round().clamp(- 2 ** (this_layer.w_bit - 1), 2 ** (this_layer.w_bit - 1) - 1) )
+                            this_layer.bias.data.sub_( (lr * this_layer.bias.grad.data / (this_layer.scale_x * this_layer.scale_w) ** 2).round().clamp(- 2 ** (4*this_layer.w_bit - 1), 2 ** (4*this_layer.w_bit - 1) - 1) )
 
                             self.optimizer.zero_grad()
 
@@ -115,7 +122,7 @@ class ClassificationTrainer(BaseTrainer):
                         output = self.model(images)
                         loss = self.criterion(output, labels)
                         # backward and update
-                        loss.backward()
+                        loss.backward()       
  
                 else:
                     ##### break BP #####
@@ -193,7 +200,8 @@ class ClassificationTrainer(BaseTrainer):
                         with torch.no_grad():
                             obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
                             self.ZO_Estim.update_obj_fn(obj_fn)
-                            output, loss, grads = self.ZO_Estim.estimate_grad()
+                            self.ZO_Estim.update_param_lr(self.optimizer.param_groups[0]['lr'])
+                            self.ZO_Estim.estimate_grad(old_loss=loss)
 
                             self.ZO_Estim.update_grad()
 
@@ -210,15 +218,20 @@ class ClassificationTrainer(BaseTrainer):
                         
                         with torch.no_grad():
                             self.ZO_Estim.update_obj_fn(obj_fn)
-                            output, loss, grads = self.ZO_Estim.estimate_grad()
+                            self.ZO_Estim.update_param_lr(self.optimizer.param_groups[0]['lr'])
+                            self.ZO_Estim.estimate_grad(old_loss=loss)
 
                             self.ZO_Estim.update_grad()
 
                     elif configs.ZO_Estim.fc_bp == False:
                         with torch.no_grad():
+                            output = self.model(images)
+                            loss = self.criterion(output, labels)
+
                             obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
                             self.ZO_Estim.update_obj_fn(obj_fn)
-                            output, loss, grads = self.ZO_Estim.estimate_grad()
+                            self.ZO_Estim.update_param_lr(self.optimizer.param_groups[0]['lr'])
+                            self.ZO_Estim.estimate_grad(old_loss=loss)
 
                             self.ZO_Estim.update_grad()
                 
@@ -227,6 +240,23 @@ class ClassificationTrainer(BaseTrainer):
                     print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
                     print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
                     print('ZO_weight_grad norm:', torch.linalg.norm(ZO_weight_grad))
+
+                    # print('cos sim FO/scale ZO', F.cosine_similarity((FO_weight_grad / this_layer.scale_w.view(-1,1,1,1)).view(-1), ZO_weight_grad.view(-1), dim=0))
+                    # print('cos sim FO ZO/scale', F.cosine_similarity(FO_weight_grad.view(-1), (ZO_weight_grad / this_layer.scale_w.view(-1,1,1,1)).view(-1), dim=0))
+                    # print('cos sim FO*scale ZO', F.cosine_similarity((FO_weight_grad * this_layer.scale_w.view(-1,1,1,1)).view(-1), ZO_weight_grad.view(-1), dim=0))
+                    # print('cos sim FO ZO*scale', F.cosine_similarity(FO_weight_grad.view(-1), (ZO_weight_grad * this_layer.scale_w.view(-1,1,1,1)).view(-1), dim=0))
+                    ratio = 0.1
+                    topk_dim = int(FO_weight_grad.numel() * ratio)
+
+                    _, FO_indices = torch.topk(FO_weight_grad.abs().flatten(), topk_dim)
+                    _, ZO_indices = torch.topk(ZO_weight_grad.abs().flatten(), topk_dim)
+
+                    topk_FO_grad = FO_weight_grad.view(-1)[FO_indices]
+                    topk_ZO_grad = ZO_weight_grad.view(-1)[ZO_indices]
+
+                    print(f'top {ratio} cos sim: {F.cosine_similarity(topk_FO_grad, topk_ZO_grad, dim=0)}')
+                    print(f'top {ratio} FO norm: {torch.linalg.norm(topk_FO_grad)}')
+                    print(f'top {ratio} ZO norm: {torch.linalg.norm(topk_ZO_grad)}')
 
                     print('\nBias Norm')
                     print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
