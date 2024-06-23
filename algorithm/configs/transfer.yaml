@@ -1,29 +1,34 @@
 resume: 0
 
 data_provider:
-  root: '~/dataset'
-
   # dataset: flowers
+  # root: '~/dataset'
   # num_classes: 102
   # load_model_path: '/home/yequan/Project/tiny-training/algorithm/runs/flowers102/mcunet-5fps/FO/20240331-001718-1312245/checkpoint/ckpt.best.pth'
   
   dataset: cars
+  root: '~/dataset'
   num_classes: 196
 
   # dataset: aircraft
+  # root: '~/dataset'
   # num_classes: 100
   
   # dataset: food101
+  # root: '~/dataset'
   # num_classes: 101
-  
-  # dataset: cub200
-  # num_classes: 200
-  
-  # dataset: pets
-  # num_classes: 37
 
   # dataset: cifar10
+  # root: '~/dataset'
   # num_classes: 10
+
+  # dataset: image_folder
+  # root: '~/dataset/cub200'
+  # num_classes: 200
+  
+  # dataset: image_folder
+  # root: '~/dataset/pets'
+  # num_classes: 37
 
   # base_batch_size: 1
   base_batch_size: 128

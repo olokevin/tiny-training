@@ -342,6 +342,9 @@ class ZO_Estim_MC(nn.Module):
     
     
     def get_actv_ZO_gradient(self, verbose=False):
+        
+        if self.estimate_method == 'forward':
+            _, old_loss = self.obj_fn(return_loss_reduction='none')
 
         if configs.train_config.layerwise_update == 'one':
             trainable_layer_list = [random.choice(self.trainable_layer_list)]
@@ -364,10 +367,10 @@ class ZO_Estim_MC(nn.Module):
             ##### Estimate gradient
             # Update all conv layers in this block
             if conv_idx == None:
-                ZO_grad, pre_activ, mask = self.get_block_actv_ZO_gradint(splited_block, local_backward_args=True)
+                ZO_grad, pre_activ, mask = self.get_block_actv_ZO_gradint(splited_block, old_loss, local_backward_args=True)
             # Update single conv layer
             else:
-                ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, local_backward_args=True)
+                ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, old_loss, local_backward_args=True)
             
             ##### Update gradient
             batch_sz = ZO_grad.shape[0]
@@ -494,13 +497,13 @@ class ZO_Estim_MC(nn.Module):
                 raise NotImplementedError('Unknown block type')      
         return None
 
-    def get_layer_actv_ZO_gradint(self, splited_block, conv_idx, local_backward_args=False):
+    def get_layer_actv_ZO_gradint(self, splited_block, conv_idx, old_loss, local_backward_args=False):
         assert splited_block.type == QuantizedMbBlock
         block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
         pre_activ = splited_block.block.conv[:conv_idx](block_in)
         post_actv = splited_block.block.conv[conv_idx](pre_activ)
 
-        if self.estimate_method == 'forward':
+        if configs.train_config.layerwise_update and self.estimate_method == 'forward':
             _, old_loss = self.obj_fn(starting_idx=splited_block.idx, input=block_in, return_loss_reduction='none')
 
         assert type(self.sigma) is int
@@ -649,13 +652,13 @@ class ZO_Estim_MC(nn.Module):
         else:
             return ZO_grad
     
-    def get_block_actv_ZO_gradint(self, splited_block, local_backward_args=False):
+    def get_block_actv_ZO_gradint(self, splited_block, old_loss, local_backward_args=False):
         assert splited_block.type == QuantizedMbBlock
 
         pre_activ = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
         post_actv = splited_block.block(pre_activ)
 
-        if self.estimate_method == 'forward':
+        if configs.train_config.layerwise_update and self.estimate_method == 'forward':
             _, old_loss = self.obj_fn(starting_idx=splited_block.idx, input=pre_activ, return_loss_reduction='none')
 
         assert type(self.sigma) is int

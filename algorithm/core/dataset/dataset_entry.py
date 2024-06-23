@@ -15,13 +15,6 @@ def build_dataset():
             root=configs.data_provider.root,
             transforms=ImageTransform(),
         )
-    elif configs.data_provider.dataset == 'aircraft':
-        dataset = {
-            'train': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='train',
-                                                  transform=ImageTransform()['train'], download=True),
-            'val': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='val',
-                                                transform=ImageTransform()['val'], download=True),
-        }
     elif configs.data_provider.dataset == 'visualwakewords':
         dataset = {
             'train': pyvww.pytorch.VisualWakeWordsClassification(root="/home/yequan/dataset/vww_raw/coco_dataset/train2014", 
@@ -58,8 +51,10 @@ def build_dataset():
         }
     elif configs.data_provider.dataset == 'aircraft':
         dataset = {
-            'train': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='train', annotation_level='family', transform=ImageTransform()['train'], download=True),
-            'val': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='test', annotation_level='family', transform=ImageTransform()['val'], download=True),
+            'train': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='train',
+                                                  transform=ImageTransform()['train'], download=True),
+            'val': torchvision.datasets.FGVCAircraft(configs.data_provider.root, split='val',
+                                                transform=ImageTransform()['val'], download=True),
         }
     elif configs.data_provider.dataset == 'flowers':
         dataset = {
