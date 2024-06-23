@@ -31,7 +31,7 @@ data_provider:
 run_config:
   # warmup_epochs: 5
   # n_epochs: 100
-  n_epochs: 4000
+  n_epochs: 1000
   bs256_lr: 0.1
   # bs256_lr: 0.01
 
@@ -81,14 +81,14 @@ backward_config:
   # n_bias_update: 22
   # n_weight_update: 0
 
-  # enable_backward_config: 1
-  # n_bias_update: 0
-  # n_weight_update: 0
+  enable_backward_config: 1
+  n_bias_update: 0
+  n_weight_update: 0
 
-  enable_backward_config: 0
+  # enable_backward_config: 0
 
 train_config:
-  # grad_output_prune_ratio: 0.9
+  grad_output_prune_ratio: 0.9
 
   # layerwise_update: 'all'
   # layerwise_update: 'one'
@@ -118,8 +118,8 @@ ZO_Estim:
   en: True
 
   # fc_bp: False
-  # fc_bp: cls_only
-  fc_bp: 'partial_BP'
+  fc_bp: cls_only
+  # fc_bp: 'partial_BP'
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
@@ -141,51 +141,51 @@ ZO_Estim:
   # trainable_layer_list: ['1.8']
   # trainable_layer_list: ['1.12', '1.13']
   # trainable_layer_list: ['1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13']
-  trainable_layer_list: ['1.9.conv.0']
+  # trainable_layer_list: ['1.9.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
-  # trainable_layer_list: ['1.6.conv.0', '1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.11.conv.0', '1.12.conv.0', '1.13.conv.0']
+  trainable_layer_list: ['1.6.conv.0', '1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.11.conv.0', '1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.7.conv.2', '1.8.conv.2', '1.9.conv.2', '1.10.conv.2', '1.12.conv.2', '1.13.conv.2']
   # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
 
-  # estimate_method: forward
-  estimate_method: antithetic
+  estimate_method: forward
+  # estimate_method: antithetic
 
   # sample_method: uniform
   # sample_method: gaussian
-  # sample_method: bernoulli
-  sample_method: coord_basis
+  sample_method: bernoulli
+  # sample_method: coord_basis
 
   ############################## Activation Perturbation ##############################
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: activation
+  obj_fn_type: classifier_layerwise
+  perturb_method: activation
 
-  # sigma: 10
+  sigma: 10
 
-  # perturb_before_round: 0
+  perturb_before_round: 0
 
-  # sync_batch_perturb: 0
-  # # sync_batch_perturb: 1
+  sync_batch_perturb: 0
+  # sync_batch_perturb: 1
 
   ############################## Param Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: param
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: param
 
-  sigma: {
-    'weight': 100,
-    'bias': 1000,
+  # sigma: {
+  #   'weight': 1,
+  #   'bias': 1000,
 
-    # 'scale_y': 0.01,
-    # 'scale_w': 0.001,
+  #   # 'scale_y': 0.01,
+  #   # 'scale_w': 0.001,
 
-    # 'gamma': 0.1,
-    # 'beta': 0.1,
-  }
+  #   # 'gamma': 0.1,
+  #   # 'beta': 0.1,
+  # }
 
-  param_update_method: None
-  # param_update_method: layerwise
-  # param_update_method: blockwise
-  # param_update_method: modelwise
+  # param_update_method: None
+  # # param_update_method: layerwise
+  # # param_update_method: blockwise
+  # # param_update_method: modelwise
 
   ############################## Weight Perturbation ##############################
   # obj_fn_type: classifier

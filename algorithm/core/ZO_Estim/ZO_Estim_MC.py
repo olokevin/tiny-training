@@ -637,10 +637,12 @@ class ZO_Estim_MC(nn.Module):
         else:
             raise NotImplementedError('Unknown sample method')
         
-        if configs.train_config.grad_output_prune_ratio is not None:
-            ZO_grad = ZO_grad * 4 / int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
-        else:
-            ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
+        # if configs.train_config.grad_output_prune_ratio is not None:
+        #     ZO_grad = ZO_grad * 4 / int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+        # else:
+        #     ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
+        
+        ZO_grad = ZO_grad / 1000
         
         if local_backward_args == True:
             return ZO_grad, pre_activ, mask
@@ -997,7 +999,15 @@ class ZO_Estim_MC(nn.Module):
                 for conv_idx in range(len(splited_block.block.conv)):
                     ##### Estimate gradient
                     trainable_layer = splited_block.block.conv[conv_idx] 
+
+                    logger.info(f'{splited_block.idx - 1}.{conv_idx}')
+                    logger.info(f'FO_weight_grad norm: {torch.linalg.norm(trainable_layer.weight.grad.data)}')
+                    logger.info(f'FO_weight_grad norm/√d: {torch.linalg.norm(trainable_layer.weight.grad.data) / math.sqrt(trainable_layer.weight.grad.data.numel())}')
+                    
                     self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
+                    
+                    logger.info(f'ZO_weight_grad norm: {torch.linalg.norm(trainable_layer.weight.grad.data)}')
+                    logger.info(f'ZO_weight_grad norm/√d: {torch.linalg.norm(trainable_layer.weight.grad.data) / math.sqrt(trainable_layer.weight.grad.data.numel())}')
                     
                     ##### conv update
                     if configs.ZO_Estim.param_update_method == 'layerwise':
