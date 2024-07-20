@@ -829,17 +829,26 @@ class ZO_Estim_MC(nn.Module):
         
         return None    
     
-    def get_single_param_ZO_gradient(self, block_idx, param, block_in, old_loss, sigma, estimate_method, sample_method):
+    def get_single_param_ZO_gradient(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method, p_scale=False):
         param_dim = param.numel()
         param_shape = param.shape
-        param_vec = param.view(-1)
+        
+        fp_sigma = sigma
 
-        param_ZO_grad = torch.zeros_like(param_vec, device=self.device)
+        if type(sigma) is not int:
+            L = self.n_sample
+            d = param.data.numel()
+            sigma = sigma * math.sqrt(4*L/(L+d-1)) / trainable_layer.scale_w.view(-1, 1, 1, 1)
+            sigma = sigma.round()
+                
+        param_ZO_grad = torch.zeros_like(param, device=self.device)
+        loss_diff = 0
 
-        # sigma = torch.mean(param)
-        # print(torch.mean(param))
+        # if sigma.numel() > 1:
+        #     sigma = sigma.view(-1,1,1,1)
 
         if sample_method == 'coord_basis':
+            param_vec = param.view(-1)
             for i in range(param_dim):
                 old_param_vec = param_vec[i] * 1
                 # pos
@@ -860,30 +869,38 @@ class ZO_Estim_MC(nn.Module):
                     raise NotImplementedError('Unknown estimate method')
         elif sample_method == 'bernoulli':
             for i in range(self.n_sample):
-                u = self._sample_unit_sphere_quantized(param_vec.shape, sample_method, self.device)
+                u = self._sample_unit_sphere_quantized(param.shape, sample_method, self.device)
                 # u = u / math.sqrt((self.n_sample + u.numel() - 1) / 4 / self.n_sample)
-                old_param_vec = param_vec * 1
                 # pos
-                param_vec.add_(u * sigma)
+                param.add_(u * sigma)
                 _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
-                param_vec.sub_(u * sigma)
+                param.sub_(u * sigma)
 
                 # neg
                 if estimate_method == 'forward':
-                    param_ZO_grad += (pos_loss - old_loss) / sigma * u
+                    loss_diff += (pos_loss - old_loss) / fp_sigma / self.n_sample
+                    param_ZO_grad += (pos_loss - old_loss)  * u
                 elif estimate_method == 'antithetic':
-                    param_vec.sub_(u * sigma)
+                    param.sub_(u * sigma)
                     _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
-                    param_vec.add_(u * sigma)
+                    param.add_(u * sigma)
 
-                    param_ZO_grad += (pos_loss - neg_loss) / 2 / sigma * u
+                    # loss_diff += (pos_loss -  neg_loss) / 2 / sigma / self.n_sample
+                    loss_diff += (pos_loss - 2*old_loss + neg_loss) / fp_sigma**2 / self.n_sample
+                    param_ZO_grad += (pos_loss - neg_loss) / 2 * u
+            
+            if sigma.numel() == 1:
+                param_ZO_grad = param_ZO_grad / sigma
+            else: 
+                param_ZO_grad = param_ZO_grad * torch.where(sigma != 0, 1 / sigma, sigma)
+
             param_ZO_grad = param_ZO_grad / self.n_sample
             # param_ZO_grad = param_ZO_grad / 500
         else:
             return NotImplementedError('sample method not implemented yet')
 
         param_ZO_grad = param_ZO_grad.view(param_shape)
-        return param_ZO_grad
+        return param_ZO_grad, loss_diff
     
     def get_scale_w_ZO_gradient(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method):
         param_dim = param.numel()
@@ -938,6 +955,7 @@ class ZO_Estim_MC(nn.Module):
 
                 # neg
                 if estimate_method == 'forward':
+                    loss_diff = (pos_loss - old_loss) / sigma
                     param_ZO_grad += (pos_loss - old_loss) / sigma * u
                 elif estimate_method == 'antithetic':
                     param_vec.sub_(u * sigma)
@@ -948,13 +966,14 @@ class ZO_Estim_MC(nn.Module):
                     param_vec.add_(u * sigma)
                     trainable_layer.weight.data = old_weight
 
+                    loss_diff = (pos_loss - neg_loss) / 2 / sigma
                     param_ZO_grad += (pos_loss - neg_loss) / 2 / sigma * u
             param_ZO_grad = param_ZO_grad / self.n_sample
         else:
             return NotImplementedError('sample method not implemented yet')
 
         param_ZO_grad = param_ZO_grad.view(param_shape)
-        return param_ZO_grad
+        return param_ZO_grad, loss_diff
     
     def get_layer_param_ZO_gradient(self, block_idx, trainable_layer, block_in, old_loss, trainable_param_list, estimate_method, sample_method):        
         for trainable_param_name in trainable_param_list:
@@ -968,15 +987,25 @@ class ZO_Estim_MC(nn.Module):
                     sigma = self.sigma
                 
                 if trainable_param_name == 'scale_w':
-                    param_ZO_grad = self.get_scale_w_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
+                    param_ZO_grad, loss_diff = self.get_scale_w_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
                 else:
-                    param_ZO_grad = self.get_single_param_ZO_gradient(block_idx, param, block_in, old_loss, sigma, estimate_method, sample_method)
+                    param_ZO_grad, loss_diff = self.get_single_param_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
                 
                 param.grad = param_ZO_grad
-            if DEBUG:
-                logger.info(f'{trainable_param_name} gradient norm {torch.linalg.norm(param_ZO_grad)}')
+        
+        return loss_diff
     
     def get_param_ZO_gradient(self, old_loss, verbose=False):
+
+        name_list = []
+        FO_norm_list = []
+        FO_norm_div_sqrt_d_list = []
+        ZO_norm_list = []
+        ZO_norm_div_sqrt_d_list = []
+        loss_diff_list = []
+
+        # for block in self.model[1]:
+        #     block.q_add=None
 
         for trainable_layer_name in self.trainable_layer_list:
             trainable_layer_name = trainable_layer_name.split('.')
@@ -1003,14 +1032,25 @@ class ZO_Estim_MC(nn.Module):
                     ##### Estimate gradient
                     trainable_layer = splited_block.block.conv[conv_idx] 
 
-                    logger.info(f'{splited_block.idx - 1}.{conv_idx}')
-                    logger.info(f'FO_weight_grad norm: {torch.linalg.norm(trainable_layer.weight.grad.data)}')
-                    logger.info(f'FO_weight_grad norm/√d: {torch.linalg.norm(trainable_layer.weight.grad.data) / math.sqrt(trainable_layer.weight.grad.data.numel())}')
+                    name_list.append(f'{splited_block.idx - 1}.{conv_idx}')
+                    # FO_norm = torch.linalg.norm(trainable_layer.weight.grad.data)
+                    # FO_norm = torch.linalg.norm(trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1, 1, 1, 1))
+                    # FO_norm = torch.linalg.norm(trainable_layer.weight.grad.data * trainable_layer.weight.data)
+                    FO_norm = torch.linalg.norm(trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1, 1, 1, 1)) ** 2 / torch.linalg.norm(trainable_layer.weight.data)
                     
-                    self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
+                    FO_norm_list.append(FO_norm)
+                    FO_norm_div_sqrt_d_list.append(FO_norm / math.sqrt(trainable_layer.weight.grad.data.numel()))
                     
-                    logger.info(f'ZO_weight_grad norm: {torch.linalg.norm(trainable_layer.weight.grad.data)}')
-                    logger.info(f'ZO_weight_grad norm/√d: {torch.linalg.norm(trainable_layer.weight.grad.data) / math.sqrt(trainable_layer.weight.grad.data.numel())}')
+                    loss_diff = self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
+                    loss_diff_list.append(loss_diff)
+                    
+                    # ZO_norm = torch.linalg.norm(trainable_layer.weight.grad.data)
+                    # ZO_norm = torch.linalg.norm(trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1, 1, 1, 1))
+                    # ZO_norm = torch.linalg.norm(trainable_layer.weight.grad.data * trainable_layer.weight.data)
+                    ZO_norm = torch.linalg.norm(trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1, 1, 1, 1)) ** 2 / torch.linalg.norm(trainable_layer.weight.data)
+                    
+                    ZO_norm_list.append(ZO_norm)
+                    ZO_norm_div_sqrt_d_list.append(ZO_norm / math.sqrt(trainable_layer.weight.grad.data.numel()))
                     
                     ##### conv update
                     if configs.ZO_Estim.param_update_method == 'layerwise':
@@ -1031,6 +1071,21 @@ class ZO_Estim_MC(nn.Module):
                     this_layer.weight.data.sub_( (lr * this_layer.weight.grad.data / this_layer.scale_w.view(-1, 1, 1, 1) ** 2).round().clamp(- 2 ** (this_layer.w_bit - 1), 2 ** (this_layer.w_bit - 1) - 1) )
                     this_layer.bias.data.sub_( (lr * this_layer.bias.grad.data / (this_layer.scale_x * this_layer.scale_w) ** 2).round().clamp(- 2 ** (4*this_layer.w_bit - 1), 2 ** (4*this_layer.w_bit - 1) - 1) )
                     
+        logger.info(f'FO_weight_grad norm')
+        for norm in FO_norm_list:
+            logger.info('{:.4e}'.format(norm.item()))
+        logger.info(f'FO_weight_grad norm/√d')
+        for norm in FO_norm_div_sqrt_d_list:
+            logger.info('{:.4e}'.format(norm.item()))
+        logger.info(f'ZO_weight_grad norm')
+        for norm in ZO_norm_list:
+            logger.info('{:.4e}'.format(norm.item()))
+        logger.info(f'ZO_weight_grad norm/√d')
+        for norm in ZO_norm_div_sqrt_d_list:
+            logger.info('{:.4e}'.format(norm.item()))
+        logger.info(f'ZO_loss_diff')
+        for norm in loss_diff_list:
+            logger.info('{:.4e}'.format(norm.item()))
         return None
     
     # def get_scale_ZO_gradient(self, old_loss, verbose=False):
