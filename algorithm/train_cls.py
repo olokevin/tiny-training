@@ -101,9 +101,9 @@ def main():
     if configs.data_provider.load_model_path is not None:
         checkpoint = torch.load(configs.data_provider.load_model_path, map_location='cpu')
         if hasattr(model, 'module'):
-            model.module.load_state_dict(checkpoint['state_dict'])
+            model.module.load_state_dict(checkpoint['state_dict'], strict=False)
         else:
-            model.load_state_dict(checkpoint['state_dict'])
+            model.load_state_dict(checkpoint['state_dict'], strict=False)
         logger.info(f'Load model from {configs.data_provider.load_model_path}')
 
         if 'best_val' in checkpoint:

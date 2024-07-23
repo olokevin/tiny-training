@@ -112,6 +112,19 @@ class BaseTrainer(object):
                     epoch=epoch,
                     is_best=is_best,
                 )
+        # early stop and test
+        if hasattr(self.data_loader, 'test'):
+            self.data_loader['val'] = self.data_loader['test']
+
+            checkpoint = torch.load(os.path.join(self.checkpoint_path, 'ckpt.best.pth'), map_location='cpu')
+            if hasattr(self.model, 'module'):
+                self.model.module.load_state_dict(checkpoint['state_dict'])
+            else:
+                self.model.load_state_dict(checkpoint['state_dict'])
+            
+            test_info_dict = self.validate()
+            logger.info(f'Test on early stop best model: {test_info_dict}')
+
         if configs.run_config.grid_output is not None and dist.rank()==0:
             with open(configs.run_config.grid_output, 'a') as f:
                 f.write(f'{configs.run_config.grid_ckpt_path}\t{configs.run_config.n_epochs}\t{configs.run_config.bs256_lr}\t{round(self.best_val, 2)}\n')

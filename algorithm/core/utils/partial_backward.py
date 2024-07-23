@@ -84,8 +84,10 @@ def parsed_backward_config(backward_config, model):
     else:  # list
         backward_config['weight_update_ratio'] = [float(p) for p in backward_config['weight_update_ratio'].split('-')]
         assert len(backward_config['weight_update_ratio']) == n_weight_update
+    
     # if we update weights, let's also update bias
     assert backward_config['n_bias_update'] >= n_weight_update
+    
     return backward_config
 
 
@@ -299,11 +301,10 @@ def apply_backward_config(model, backward_config):
     assert n_w_trained == len(backward_config['manual_weight_idx']), \
         (n_w_trained, len(backward_config['manual_weight_idx']))
 
-    # if backward_config['freeze_fc']:
-    #     from quantize.quantized_ops_diff import ScaledLinear
-    #     assert isinstance(model.module[-2], ScaledLinear)
-    #     for p in model.module[-2].parameters():
-    #         p.grad = None
+    if backward_config['freeze_fc']:
+        assert isinstance(model[-2], torch.nn.Linear)
+        for p in model[-2].parameters():
+            p.grad = None
 
 
 def _test_nelem_saved_for_backward():
