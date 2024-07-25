@@ -109,12 +109,12 @@ def build_dataset():
         test_idxs = []
         for i in range(len(labels.keys())):
             np.random.shuffle(labels[i])
-            # tr_idxs.append(labels[i][:num_ex])
-            # val_idxs.append(labels[i][num_ex:num_ex+10])
-            tr_idxs.append(labels[i][:num_ex+10])
+            tr_idxs.append(labels[i][:num_ex])
+            val_idxs.append(labels[i][num_ex:num_ex+10])
+            # tr_idxs.append(labels[i][:num_ex+10])
             test_idxs.append(labels[i][num_ex+10:num_ex+100])
         tr_idxs = np.concatenate(tr_idxs)
-        # val_idxs = np.concatenate(val_idxs)
+        val_idxs = np.concatenate(val_idxs)
         test_idxs = np.concatenate(test_idxs)
         
         # train_data = TensorDataset(x_corr[tr_idxs], y_corr[tr_idxs])

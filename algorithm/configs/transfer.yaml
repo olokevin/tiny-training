@@ -29,7 +29,7 @@ data_provider:
   train_n: 1000
   corruption_type: gaussian_noise
   # corruption_type: [frost,gaussian_blur,gaussian_noise,glass_blur,impulse_noise,jpeg_compression,motion_blur,pixelate,saturate,shot_noise,snow,spatter,speckle_noise,zoom_blur]
-  load_model_path: '/home/zyq123/Project/Edge/tiny-training/algorithm/runs/dataset/mcunet-5fps/FO/20240721-184509-607973/checkpoint/ckpt.best.pth'
+  load_model_path: './assets/mcunet_in1_cifar10.pth'
 
   # dataset: image_folder
   # root: '~/dataset/cub200'
@@ -126,10 +126,15 @@ backward_config:
   # weight_update_ratio: 1-1-1
 
   ##### first 6 pw1
+  # enable_backward_config: 1  
+  # n_bias_update: 42
+  # manual_weight_idx: 0-3-6-9-12-15-18
+  # weight_update_ratio: 1-1-1-1-1-1-1
+
   enable_backward_config: 1  
   n_bias_update: 42
-  manual_weight_idx: 0-3-6-9-12-15-18
-  weight_update_ratio: 1-1-1-1-1-1-1
+  manual_weight_idx: 9-12-15-18-21
+  weight_update_ratio: 1-1-1-1-1
 
 train_config:
   # grad_output_prune_ratio: 0.9
