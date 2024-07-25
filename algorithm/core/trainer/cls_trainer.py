@@ -248,15 +248,20 @@ class ClassificationTrainer(BaseTrainer):
                     ratio = 0.1
                     topk_dim = int(FO_weight_grad.numel() * ratio)
 
-                    _, FO_indices = torch.topk(FO_weight_grad.abs().flatten(), topk_dim)
-                    _, ZO_indices = torch.topk(ZO_weight_grad.abs().flatten(), topk_dim)
+                    _, topk_indices = torch.topk(ZO_weight_grad.abs().flatten(), topk_dim)
+                    rand_indices = torch.randperm(FO_weight_grad.numel())[:topk_dim]
 
-                    topk_FO_grad = FO_weight_grad.view(-1)[FO_indices]
-                    topk_ZO_grad = ZO_weight_grad.view(-1)[ZO_indices]
-
+                    topk_FO_grad = torch.zeros_like(FO_weight_grad.view(-1))
+                    topk_FO_grad[topk_indices] = FO_weight_grad.view(-1)[topk_indices]
+                    topk_ZO_grad = torch.zeros_like(ZO_weight_grad.view(-1))
+                    topk_ZO_grad[topk_indices] = ZO_weight_grad.view(-1)[topk_indices]
                     print(f'top {ratio} cos sim: {F.cosine_similarity(topk_FO_grad, topk_ZO_grad, dim=0)}')
-                    print(f'top {ratio} FO norm: {torch.linalg.norm(topk_FO_grad)}')
-                    print(f'top {ratio} ZO norm: {torch.linalg.norm(topk_ZO_grad)}')
+                    
+                    rand_FO_grad = torch.zeros_like(FO_weight_grad.view(-1))
+                    rand_FO_grad[rand_indices] = FO_weight_grad.view(-1)[rand_indices]
+                    rand_ZO_grad = torch.zeros_like(ZO_weight_grad.view(-1))
+                    rand_ZO_grad[rand_indices] = ZO_weight_grad.view(-1)[rand_indices]
+                    print(f'rand {ratio} cos sim: {F.cosine_similarity(rand_FO_grad, rand_ZO_grad, dim=0)}')
 
                     print('\nBias Norm')
                     print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
