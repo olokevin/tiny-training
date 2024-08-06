@@ -90,6 +90,11 @@ def build_dataset():
             'train': torchvision.datasets.Food101(configs.data_provider.root, split='train', transform=ImageTransform()['train'], download=True),
             'val': torchvision.datasets.Food101(configs.data_provider.root, split='test', transform=ImageTransform()['val'], download=True)
         }
+    elif configs.data_provider.dataset == 'pets':
+        dataset = {
+            'train': torchvision.datasets.OxfordIIITPet(configs.data_provider.root, split='trainval', transform=ImageTransform()['train'], download=True),
+            'val': torchvision.datasets.OxfordIIITPet(configs.data_provider.root, split='test', transform=ImageTransform()['val'], download=True)
+        }
     elif configs.data_provider.dataset == 'cifar10-c':
         corruption_type = configs.data_provider.corruption_type
         severity = configs.data_provider.severity

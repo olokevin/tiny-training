@@ -524,11 +524,18 @@ class ZO_Estim_MC(nn.Module):
             # mask.view(-1)[indices] = True
 
             ### Output actv magnitude top-k sparsity, batch-wise
+            # batch_sz = post_actv.shape[0]
+            # topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+            # for b in range(batch_sz):
+            #     _, indices = torch.topk((post_actv[b]-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
+            #     mask[b].view(-1)[indices] = True
+            
+            ### Output actv magnitude top-k sparsity, channel-wise
             batch_sz = post_actv.shape[0]
-            topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+            topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.size(1)))
             for b in range(batch_sz):
-                _, indices = torch.topk((post_actv[b]-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
-                mask[b].view(-1)[indices] = True
+                _, indices = torch.topk(torch.linalg.norm((post_actv[b]-splited_block.block.conv[conv_idx].zero_y), dim=(1,2)), topk_dim)
+                mask[b,indices,:,:] = True
         else:
             mask = splited_block.block.conv[conv_idx].binary_mask
             # mask = torch.ones_like(post_actv)
@@ -645,6 +652,8 @@ class ZO_Estim_MC(nn.Module):
         # else:
         #     ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
         
+        ### ZO gradient scale adjustment
+        ZO_grad = ZO_grad * math.sqrt(self.n_sample / (torch.sum(mask).item() / batch_sz - 1))
         # ZO_grad = ZO_grad / 1000
         
         if local_backward_args == True:
