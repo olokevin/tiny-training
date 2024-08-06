@@ -236,6 +236,21 @@ class ClassificationTrainer(BaseTrainer):
                             self.ZO_Estim.update_grad()
                 
                 if PARAM_GRAD_DEBUG:
+                    for block in self.model[1]:
+                        for layer in block.conv:
+                            if hasattr(layer, 'weight'):
+                                ZO_scale = 1
+                                # ZO_scale = math.sqrt(1 / layer.weight.numel())
+                                # ZO_scale = math.sqrt(self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() + 1))
+                                # ZO_scale = self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() + 1)
+                                # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad) / torch.norm(layer.weight)
+                                # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight)
+                                # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1) ** 2) / torch.norm(layer.weight)
+                                G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                                
+                                print(f'{G_W_ratio}')
+                                # print(G_W_ratio * ZO_scale)
+                    
                     print('\nWeight Norm')
                     print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
                     print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
