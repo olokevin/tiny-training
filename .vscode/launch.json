@@ -12,10 +12,10 @@
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}/algorithm",
       "env": {
-        "CUDA_VISIBLE_DEVICES": "0",
+        "CUDA_VISIBLE_DEVICES": "2",
         "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
       },
-      "args": ["configs/transfer.yaml", "--run_dir", "runs/flowers/mcunet-5fps/sparse_100kb/sgd_qas_nomom"],
+      "args": ["configs/transfer.yaml"],
       "justMyCode": true
     },
     {
@@ -26,10 +26,10 @@
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}/algorithm",
       "env": {
-        "CUDA_VISIBLE_DEVICES": "0",
+        "CUDA_VISIBLE_DEVICES": "2",
         "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
       },
-      "args": ["configs/vww.yaml", "--run_dir", "runs/flowers/mcunet-5fps/sparse_update/vww"],
+      "args": ["configs/vww.yaml"],
       "justMyCode": true
     }
   ]

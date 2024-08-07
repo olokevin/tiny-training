@@ -13,6 +13,7 @@ data_provider:
   n_worker: 8
   image_size: 128
   num_classes: null
+  num_samples_per_class: null
 
   load_model_path: null
 

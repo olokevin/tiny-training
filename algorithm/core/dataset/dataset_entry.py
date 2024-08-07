@@ -9,6 +9,7 @@ import numpy as np
 from robustbench.data import load_cifar10c
 from torch.utils.data import DataLoader, Subset, TensorDataset
 from torchvision import transforms
+from .cub2011 import Cub2011
 
 __all__ = ['build_dataset']
 
@@ -72,6 +73,11 @@ def build_dataset():
         dataset = {
             'train': torchvision.datasets.StanfordCars(configs.data_provider.root, split='train', transform=ImageTransform()['train'], download=False),
             'val': torchvision.datasets.StanfordCars(configs.data_provider.root, split='test', transform=ImageTransform()['val'], download=False),
+        }
+    elif configs.data_provider.dataset == 'cub':
+        dataset = {
+            'train': Cub2011(configs.data_provider.root, train=True, download=True, transform=ImageTransform()['train']),
+            'val': Cub2011(configs.data_provider.root, train=False, download=True, transform=ImageTransform()['val']),
         }
     elif configs.data_provider.dataset == 'aircraft':
         dataset = {
@@ -181,5 +187,27 @@ def build_dataset():
     
     else:
         raise NotImplementedError(configs.data_provider.dataset)
+  
+    # if configs.data_provider.num_samples_per_class is not None:
+    #     # Create a dictionary to store indices for each class
+    #     labels = {}
+    #     full_train_dataset = dataset['train']
+    #     y_train = [full_train_dataset.classes.index(full_train_dataset._labels[i]) for i in range(len(full_train_dataset))]
+    #     num_classes = configs.data_provider.num_classes
+    #     num_samples_per_class = configs.data_provider.num_samples_per_class
+
+    #     for i in range(num_classes):
+    #         labels[i] = [ind for ind, n in enumerate(y_train) if n == i]
+
+    #     # Shuffle the indices for each class and select 10 images for training
+    #     train_indices = []
+    #     for i in range(num_classes):
+    #         np.random.shuffle(labels[i])
+    #         train_indices.extend(labels[i][:num_samples_per_class])
+
+    #     # Create subsets for training, validation, and test datasets
+    #     train_subset = Subset(full_train_dataset, train_indices)
+        
+    #     dataset['train'] = train_subset
 
     return dataset

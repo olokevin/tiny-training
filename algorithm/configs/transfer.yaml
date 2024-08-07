@@ -13,17 +13,18 @@ data_provider:
   # root: '~/dataset'
   # num_classes: 100
 
-  # dataset: image_folder
-  # root: '~/dataset/cub200'
-  # num_classes: 200
+  dataset: cub
+  root: '~/dataset'
+  num_classes: 200
 
   # dataset: flowers
   # root: '~/dataset'
   # num_classes: 102
   
-  dataset: food
-  root: '~/dataset'
-  num_classes: 101
+  # dataset: food
+  # root: '~/dataset'
+  # num_classes: 101
+  # # num_samples_per_class: 50
 
   # dataset: pets
   # root: '~/dataset'
@@ -197,7 +198,7 @@ ZO_Estim:
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 10
+  n_sample: 100
   signSGD: False
 
   # trainable_param_list: all

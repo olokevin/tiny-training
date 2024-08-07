@@ -536,6 +536,8 @@ class ZO_Estim_MC(nn.Module):
             for b in range(batch_sz):
                 _, indices = torch.topk(torch.linalg.norm((post_actv[b]-splited_block.block.conv[conv_idx].zero_y), dim=(1,2)), topk_dim)
                 mask[b,indices,:,:] = True
+            
+            mask = mask * splited_block.block.conv[conv_idx].binary_mask
         else:
             mask = splited_block.block.conv[conv_idx].binary_mask
             # mask = torch.ones_like(post_actv)
