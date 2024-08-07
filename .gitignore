@@ -5,6 +5,8 @@ ir_zoos/*
 # user
 runs/
 temp/
+paper.ipynb
+mcunet/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

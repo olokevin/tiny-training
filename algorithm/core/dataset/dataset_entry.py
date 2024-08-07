@@ -2,6 +2,7 @@ from .vision import *
 from ..utils.config import configs
 from .vision.transform import *
 import os
+import torch
 import torchvision
 import pyvww
 
@@ -188,26 +189,14 @@ def build_dataset():
     else:
         raise NotImplementedError(configs.data_provider.dataset)
   
-    # if configs.data_provider.num_samples_per_class is not None:
-    #     # Create a dictionary to store indices for each class
-    #     labels = {}
-    #     full_train_dataset = dataset['train']
-    #     y_train = [full_train_dataset.classes.index(full_train_dataset._labels[i]) for i in range(len(full_train_dataset))]
-    #     num_classes = configs.data_provider.num_classes
-    #     num_samples_per_class = configs.data_provider.num_samples_per_class
+    if configs.data_provider.num_samples_per_class is not None:
+        trainset = dataset['train']
+        indices = []
+        for i in range(configs.data_provider.num_classes):  # classes in CIFAR-10
+            class_indices = torch.where(torch.tensor(trainset._labels) == i)[0]
+            subset_indices = class_indices[:configs.data_provider.num_samples_per_class]  # Select 10 images per class
+            indices.extend(subset_indices)
 
-    #     for i in range(num_classes):
-    #         labels[i] = [ind for ind, n in enumerate(y_train) if n == i]
-
-    #     # Shuffle the indices for each class and select 10 images for training
-    #     train_indices = []
-    #     for i in range(num_classes):
-    #         np.random.shuffle(labels[i])
-    #         train_indices.extend(labels[i][:num_samples_per_class])
-
-    #     # Create subsets for training, validation, and test datasets
-    #     train_subset = Subset(full_train_dataset, train_indices)
-        
-    #     dataset['train'] = train_subset
-
+        dataset['train'] = Subset(trainset, indices)
+      
     return dataset

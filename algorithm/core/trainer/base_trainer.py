@@ -113,7 +113,7 @@ class BaseTrainer(object):
                     is_best=is_best,
                 )
         # early stop and test
-        if hasattr(self.data_loader, 'test'):
+        if 'test' in self.data_loader:
             self.data_loader['val'] = self.data_loader['test']
 
             checkpoint = torch.load(os.path.join(self.checkpoint_path, 'ckpt.best.pth'), map_location='cpu')

@@ -13,18 +13,18 @@ data_provider:
   # root: '~/dataset'
   # num_classes: 100
 
-  dataset: cub
-  root: '~/dataset'
-  num_classes: 200
+  # dataset: cub
+  # root: '~/dataset'
+  # num_classes: 200
 
   # dataset: flowers
   # root: '~/dataset'
   # num_classes: 102
   
-  # dataset: food
-  # root: '~/dataset'
-  # num_classes: 101
-  # # num_samples_per_class: 50
+  dataset: food
+  root: '~/dataset'
+  num_classes: 101
+  num_samples_per_class: 50
 
   # dataset: pets
   # root: '~/dataset'
@@ -49,10 +49,10 @@ data_provider:
 
 run_config:
   # warmup_epochs: 5
-  # n_epochs: 50
+  # n_epochs: 100
   n_epochs: 2000
-  # bs256_lr: 0.1
-  bs256_lr: 0.01
+  bs256_lr: 0.1
+  # bs256_lr: 0.01
 
   # iteration_decay: 0
 
@@ -198,7 +198,7 @@ ZO_Estim:
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 100
+  n_sample: 10
   signSGD: False
 
   # trainable_param_list: all

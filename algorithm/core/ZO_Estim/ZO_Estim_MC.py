@@ -907,7 +907,7 @@ class ZO_Estim_MC(nn.Module):
 
             param_ZO_grad = param_ZO_grad / self.n_sample
             
-            param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (self.n_sample + param.numel() + 1))
+            param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (param.numel() - 1))
         else:
             return NotImplementedError('sample method not implemented yet')
 
