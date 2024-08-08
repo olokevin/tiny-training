@@ -1,11 +1,11 @@
 resume: 0
-# wandb: 1
-# project: FGVC_ZO
+wandb: 1
+project: FGVC_ZO_INT
 
 data_provider:
-  dataset: cars
-  root: '~/dataset'
-  num_classes: 196
+  # dataset: cars
+  # root: '~/dataset'
+  # num_classes: 196
 
   # dataset: cifar10
   # root: '~/dataset'
@@ -23,10 +23,10 @@ data_provider:
   # root: '~/dataset'
   # num_classes: 102
   
-  # dataset: food
-  # root: '~/dataset'
-  # num_classes: 101
-  # num_samples_per_class: 50
+  dataset: food
+  root: '~/dataset'
+  num_classes: 101
+  num_samples_per_class: 100
 
   # dataset: pets
   # root: '~/dataset'
@@ -84,10 +84,10 @@ net_config:
   # net_name: proxyless-w0.3
 
 backward_config:
-  # quantize_gradient: 1
+  quantize_gradient: 1
 
   ##### Full model
-  enable_backward_config: 0
+  # enable_backward_config: 0
 
   ##### cls-only
   # enable_backward_config: 1
@@ -102,10 +102,10 @@ backward_config:
   # weight_update_ratio: 1-1-1-1-1-1
 
   ##### PokeEngine
-  # enable_backward_config: 1  
-  # n_bias_update: 22
-  # manual_weight_idx: 24-27-30-33
-  # weight_update_ratio: 1-1-0.5-1
+  enable_backward_config: 1  
+  n_bias_update: 22
+  manual_weight_idx: 24-27-30-33
+  weight_update_ratio: 1-1-0.5-1
 
   ##### select 6 layers
   # enable_backward_config: 1  

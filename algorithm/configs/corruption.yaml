@@ -29,7 +29,7 @@ data_provider:
   num_classes: 10
   severity: 5
   train_n: 1000
-  corruption_type: defocus_blur
+  corruption_type: gaussian_noise
   # corruption_type: [gaussian_noise, impulse_noise, shot_noise, fog, frost, snow, defocus_blur, elastic_transform, brightness, contrast, defocus_blur]
   load_model_path: './assets/mcunet_in1_cifar10.pth'
 
@@ -41,13 +41,13 @@ data_provider:
   # root: '~/dataset/pets'
   # num_classes: 37
 
-  # base_batch_size: 1
+  base_batch_size: 1
   # base_batch_size: 128
-  base_batch_size: 100
+  # base_batch_size: 100
 
 run_config:
   # warmup_epochs: 5
-  n_epochs: 100
+  n_epochs: 50
   # n_epochs: 2000
 
   ### no gradint accumulation
@@ -55,8 +55,8 @@ run_config:
   # bs256_lr: 0.01
 
   ### gradient accumulation setting
-  base_lr: 0.05
-  grad_accumulation_steps: 128
+  base_lr: 0.005
+  grad_accumulation_steps: 100
 
   # iteration_decay: 0
 
@@ -80,15 +80,15 @@ net_config:
   # net_name: proxyless-w0.3
 
 backward_config:
-  # quantize_gradient: 1
+  quantize_gradient: 1
 
   ##### Full model
   # enable_backward_config: 0
 
   ##### cls-only
-  enable_backward_config: 1
-  n_bias_update: 0
-  n_weight_update: 0
+  # enable_backward_config: 1
+  # n_bias_update: 0
+  # n_weight_update: 0
 
   ##### sparse update (100KB scheme): 88.84%
   # enable_backward_config: 1  
@@ -98,10 +98,10 @@ backward_config:
   # weight_update_ratio: 1-1-1-1-1-1
 
   ##### PokeEngine
-  # enable_backward_config: 1  
-  # n_bias_update: 22
-  # manual_weight_idx: 24-27-30-33
-  # weight_update_ratio: 1-1-0.5-1
+  enable_backward_config: 1  
+  n_bias_update: 22
+  manual_weight_idx: 24-27-30-33
+  weight_update_ratio: 1-1-0.5-1
 
   ##### select 6 layers
   # enable_backward_config: 1  
@@ -167,7 +167,7 @@ backward_config:
   # weight_update_ratio: 1
 
 train_config:
-  grad_output_prune_ratio: 0.9
+  # grad_output_prune_ratio: 0.9
 
   # layerwise_update: 'all'
   # layerwise_update: 'one'
@@ -194,7 +194,7 @@ train_config:
   }
   
 ZO_Estim:
-  en: True
+  # en: True
 
   # fc_bp: False
   fc_bp: cls_only
