@@ -192,11 +192,20 @@ def build_dataset():
     if configs.data_provider.num_samples_per_class is not None:
         trainset = dataset['train']
         indices = []
-        for i in range(configs.data_provider.num_classes):  # classes in CIFAR-10
+        for i in range(configs.data_provider.num_classes):  
             class_indices = torch.where(torch.tensor(trainset._labels) == i)[0]
-            subset_indices = class_indices[:configs.data_provider.num_samples_per_class]  # Select 10 images per class
+            subset_indices = class_indices[:configs.data_provider.num_samples_per_class]  
             indices.extend(subset_indices)
 
         dataset['train'] = Subset(trainset, indices)
+        
+        valset = dataset['val']
+        indices = []
+        for i in range(configs.data_provider.num_classes):  
+            class_indices = torch.where(torch.tensor(valset._labels) == i)[0]
+            subset_indices = class_indices[:configs.data_provider.num_samples_per_class]  
+            indices.extend(subset_indices)
+
+        dataset['val'] = Subset(valset, indices)
       
     return dataset

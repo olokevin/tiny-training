@@ -217,6 +217,7 @@ ZO_Estim:
   # trainable_layer_list: ['1.12', '1.13']
   # trainable_layer_list: ['1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13']
   # trainable_layer_list: ['1.1.conv.0']
+  # trainable_layer_list: ['1.12.conv.0', '1.13.conv.0']
   # trainable_layer_list: ['1.3.conv.0', '1.4.conv.0', '1.5.conv.0', '1.7.conv.0', '1.8.conv.0', '1.10.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0']
   trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
