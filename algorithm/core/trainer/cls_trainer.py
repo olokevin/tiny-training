@@ -65,13 +65,15 @@ class ClassificationTrainer(BaseTrainer):
 
         train_loss = DistributedMetric('train_loss')
         train_top1 = DistributedMetric('train_top1')
+        
+        self.optimizer.zero_grad()
 
         with tqdm(total=len(self.data_loader['train']),
                   desc='Train Epoch #{}'.format(epoch),
                   disable=dist.rank() > 0 or configs.ray_tune) as t:
             for batch_idx, (images, labels) in enumerate(self.data_loader['train']):
                 images, labels = images.cuda(), labels.cuda()
-                self.optimizer.zero_grad()
+                # self.optimizer.zero_grad()
                 
                 if self.ZO_Estim is None:
                     if configs.train_config.layerwise_update is None:
@@ -284,13 +286,22 @@ class ClassificationTrainer(BaseTrainer):
 
                     print('ZO_bias_grad norm:', torch.linalg.norm(ZO_bias_grad))
 
-                if hasattr(self.optimizer, 'pre_step'):  # for SGDScale optimizer
-                    self.optimizer.pre_step(self.model)
+                
+                # The gradients are computed for each mini-batch by calling loss.backward(). 
+                # This adds the gradients to the existing values instead of replacing them.
+                if configs.run_config.grad_accumulation_steps > 1 and (batch_idx + 1) % configs.run_config.grad_accumulation_steps != 0:
+                    pass
+                # do SGD step
+                else:
+                    if hasattr(self.optimizer, 'pre_step'):  # for SGDScale optimizer
+                        self.optimizer.pre_step(self.model)
 
-                self.optimizer.step()
+                    self.optimizer.step()
 
-                if hasattr(self.optimizer, 'post_step'):  # for SGDScaleInt optimizer
-                    self.optimizer.post_step(self.model)
+                    if hasattr(self.optimizer, 'post_step'):  # for SGDScaleInt optimizer
+                        self.optimizer.post_step(self.model)
+                    
+                    self.optimizer.zero_grad()  # or self.net.zero_grad()
 
                 # after one step
                 train_loss.update(loss, images.shape[0])

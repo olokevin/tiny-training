@@ -1,6 +1,6 @@
 resume: 0
-wandb: 1
-project: FGVC_ZO
+# wandb: 1
+# project: FGVC_ZO
 
 data_provider:
   dataset: cars
@@ -45,16 +45,22 @@ data_provider:
   # # corruption_type: [gaussian_noise, impulse_noise, shot_noise, fog, frost, snow, defocus_blur, elastic_transform, brightness, contrast, defocus_blur]
   # load_model_path: './assets/mcunet_in1_cifar10.pth'
 
-  # base_batch_size: 1
+  base_batch_size: 1
   # base_batch_size: 128
-  base_batch_size: 100
+  # base_batch_size: 100
 
 run_config:
   # warmup_epochs: 5
-  # n_epochs: 100
-  n_epochs: 2000
-  bs256_lr: 0.1
+  n_epochs: 100
+  # n_epochs: 2000
+
+  ### no gradint accumulation
+  # bs256_lr: 0.1
   # bs256_lr: 0.01
+
+  ### gradient accumulation setting
+  base_lr: 0.05
+  grad_accumulation_steps: 128
 
   # iteration_decay: 0
 
@@ -81,12 +87,12 @@ backward_config:
   # quantize_gradient: 1
 
   ##### Full model
-  # enable_backward_config: 0
+  enable_backward_config: 0
 
   ##### cls-only
-  enable_backward_config: 1
-  n_bias_update: 0
-  n_weight_update: 0
+  # enable_backward_config: 1
+  # n_bias_update: 0
+  # n_weight_update: 0
 
   ##### sparse update (100KB scheme): 88.84%
   # enable_backward_config: 1  
