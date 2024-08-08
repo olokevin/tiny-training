@@ -3,6 +3,8 @@ manual_seed: 0
 evaluate: false
 ray_tune: 0  # ray tuning
 resume: 0
+wandb: 0
+project: mcunet
 
 data_provider:
   dataset: image_folder

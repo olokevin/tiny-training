@@ -10,6 +10,8 @@ from ..utils.config import configs
 from ..utils.logging import logger
 from ..utils.network import remove_bn, trainable_param_num
 
+import wandb
+
 __all__ = ['BaseTrainer']
 
 
@@ -95,6 +97,9 @@ class BaseTrainer(object):
             if configs.run_config.iteration_decay == 0:
                 self.lr_scheduler.step()
             logger.info(f'epoch {epoch}: f{train_info_dict}')
+            
+            if configs.wandb:
+                wandb.log(train_info_dict)
 
             if (epoch + 1) % configs.run_config.eval_per_epochs == 0 \
                     or epoch == configs.run_config.n_epochs + configs.run_config.warmup_epochs - 1:
@@ -106,6 +111,8 @@ class BaseTrainer(object):
                     logger.info(' * New best acc (epoch {}): {:.2f}'.format(epoch, self.best_val))
                 val_info_dict['val/best'] = self.best_val
                 logger.info(f'epoch {epoch}: {val_info_dict}')
+                if configs.wandb:
+                    wandb.log(val_info_dict)
                 
                 # save model
                 self.save(
@@ -124,6 +131,8 @@ class BaseTrainer(object):
             
             test_info_dict = self.validate()
             logger.info(f'Test on early stop best model: {test_info_dict}')
+            if configs.wandb:
+                wandb.log(f'Test on early stop best model: {test_info_dict}')
 
         if configs.run_config.grid_output is not None and dist.rank()==0:
             with open(configs.run_config.grid_output, 'a') as f:

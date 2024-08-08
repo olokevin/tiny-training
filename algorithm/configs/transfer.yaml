@@ -1,9 +1,11 @@
 resume: 0
+wandb: 1
+project: FGVC_ZO
 
 data_provider:
-  # dataset: cars
-  # root: '~/dataset'
-  # num_classes: 196
+  dataset: cars
+  root: '~/dataset'
+  num_classes: 196
 
   # dataset: cifar10
   # root: '~/dataset'
@@ -21,10 +23,10 @@ data_provider:
   # root: '~/dataset'
   # num_classes: 102
   
-  dataset: food
-  root: '~/dataset'
-  num_classes: 101
-  num_samples_per_class: 50
+  # dataset: food
+  # root: '~/dataset'
+  # num_classes: 101
+  # num_samples_per_class: 50
 
   # dataset: pets
   # root: '~/dataset'
@@ -163,7 +165,7 @@ backward_config:
   # weight_update_ratio: 1
 
 train_config:
-  grad_output_prune_ratio: 0.9
+  # grad_output_prune_ratio: 0.9
 
   # layerwise_update: 'all'
   # layerwise_update: 'one'
@@ -190,7 +192,7 @@ train_config:
   }
   
 ZO_Estim:
-  en: True
+  # en: True
 
   # fc_bp: False
   fc_bp: cls_only

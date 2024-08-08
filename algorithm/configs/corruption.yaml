@@ -1,4 +1,6 @@
 resume: 0
+wandb: 1
+project: CIFAR_C_ZO
 
 data_provider:
   # dataset: flowers

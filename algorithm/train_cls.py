@@ -20,6 +20,29 @@ from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim
 from core.trainer.cls_trainer import ClassificationTrainer
 from core.builder.lr_scheduler import build_lr_scheduler
 
+import wandb
+def setup_wandb(cfg):
+    wandb.init(
+        # entity=cfg.user.wandb_id,
+        project=cfg.project,
+        settings=wandb.Settings(start_method="thread"),
+        # name=f'batch{cfg.train_batch_size}\
+        #       /{cfg.dataset}\
+        #       /{cfg.net}\
+        #       /{cfg.transfer_learning_method}\
+        #       /{os.getpid()}-' + time.strftime("%Y%m%d-%H%M%S")
+        name=time.strftime("%Y%m%d-%H%M%S")+f'-{os.getpid()}'
+    )
+    wandb.config.update(cfg, allow_val_change=True)
+
+    # define our custom x axis metric
+    wandb.define_metric("train/epoch")
+    # set all other train/ metrics to use this step
+    wandb.define_metric("train/*", step_metric="train/epoch")
+
+    wandb.define_metric("val/epoch")
+    wandb.define_metric("val/*", step_metric="val/epoch")
+
 # Training settings
 parser = argparse.ArgumentParser()
 parser.add_argument('config', metavar='FILE', help='config file')
@@ -54,6 +77,9 @@ def main():
 
     # set random seed
     set_torch_deterministic(configs.manual_seed)
+    
+    if configs.wandb:
+        setup_wandb(configs)
 
     if configs.run_dir is None:
         if configs.ZO_Estim.en is True:
