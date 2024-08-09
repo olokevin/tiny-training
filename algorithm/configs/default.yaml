@@ -43,6 +43,7 @@ run_config:
   # partial blocks for fp32
   n_block_update: -1
 
+  grad_accumulation_steps: 1
   iteration_decay: 1
 
 net_config:
@@ -62,6 +63,7 @@ backward_config:  # for partial backward
   pw1_weight_only: 0  # only update the weight of the first pointwise conv (since it has smaller input act.)
   manual_weight_idx: null
   quantize_gradient: 0
+  n_bit: 8
   freeze_fc: 0
   only_update_selected_bias: 0
 

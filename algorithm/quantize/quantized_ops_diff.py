@@ -223,9 +223,9 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         if configs.backward_config.quantize_gradient:  # perform per-channel quantization
             # quantize grad_x and grad_w
             from .quantize_helper import get_weight_scales
-            w_scales = get_weight_scales(grad_w, n_bit=8)
+            w_scales = get_weight_scales(grad_w, n_bit=configs.backward_config.n_bit)
             grad_w = (grad_w / w_scales.view(-1, 1, 1, 1)).round() * w_scales.view(-1, 1, 1, 1)
-            x_scales = get_weight_scales(grad_x.transpose(0, 1))
+            x_scales = get_weight_scales(grad_x.transpose(0, 1), n_bit=configs.backward_config.n_bit)
             grad_x = (grad_x / x_scales.view(1, -1, 1, 1)).round() * x_scales.view(1, -1, 1, 1)
 
         return grad_x, grad_w, grad_bias, None, None, None, None, None, None, None
@@ -498,9 +498,9 @@ class QuantizedConv2dDiff(QuantizedConv2d):
         if configs.backward_config.quantize_gradient:  # perform per-channel quantization
             # quantize grad_x and grad_w
             from .quantize_helper import get_weight_scales
-            w_scales = get_weight_scales(grad_w, n_bit=8)
+            w_scales = get_weight_scales(grad_w, n_bit=configs.backward_config.n_bit)
             grad_w = (grad_w / w_scales.view(-1, 1, 1, 1)).round() * w_scales.view(-1, 1, 1, 1)
-            x_scales = get_weight_scales(grad_x.transpose(0, 1))
+            x_scales = get_weight_scales(grad_x.transpose(0, 1), n_bit=configs.backward_config.n_bit)
             grad_x = (grad_x / x_scales.view(1, -1, 1, 1)).round() * x_scales.view(1, -1, 1, 1)
 
         return grad_x, grad_w, grad_bias

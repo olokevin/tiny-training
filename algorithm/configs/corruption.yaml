@@ -29,7 +29,7 @@ data_provider:
   num_classes: 10
   severity: 5
   train_n: 1000
-  corruption_type: gaussian_noise
+  corruption_type: impulse_noise
   # corruption_type: [gaussian_noise, impulse_noise, shot_noise, fog, frost, snow, defocus_blur, elastic_transform, brightness, contrast, defocus_blur]
   load_model_path: './assets/mcunet_in1_cifar10.pth'
 
@@ -55,7 +55,7 @@ run_config:
   # bs256_lr: 0.01
 
   ### gradient accumulation setting
-  base_lr: 0.005
+  base_lr: 0.0005
   grad_accumulation_steps: 100
 
   # iteration_decay: 0
@@ -80,7 +80,7 @@ net_config:
   # net_name: proxyless-w0.3
 
 backward_config:
-  quantize_gradient: 1
+  # quantize_gradient: 1
 
   ##### Full model
   # enable_backward_config: 0
