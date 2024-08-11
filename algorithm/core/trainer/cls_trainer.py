@@ -245,26 +245,37 @@ class ClassificationTrainer(BaseTrainer):
                             self.ZO_Estim.update_grad()
                 
                 if PARAM_GRAD_DEBUG:
-                    for block in self.model[1]:
-                        for layer in block.conv:
-                            if hasattr(layer, 'weight'):
-                                ZO_scale = 1
-                                # ZO_scale = math.sqrt(1 / layer.weight.numel())
-                                # ZO_scale = math.sqrt(self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() + 1))
-                                # ZO_scale = self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() + 1)
-                                # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad) / torch.norm(layer.weight)
-                                # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight)
-                                # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1) ** 2) / torch.norm(layer.weight)
-                                G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                    """
+                        Layer selection
+                    """
+                    # for block in self.model[1]:
+                    #     for layer in block.conv:
+                    #         if hasattr(layer, 'weight'):
+                    #             ZO_scale = 1
+                    #             # ZO_scale = math.sqrt(1 / layer.weight.numel())
+                    #             # ZO_scale = math.sqrt(self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() + 1))
+                    #             # ZO_scale = self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() + 1)
+                    #             # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad) / torch.norm(layer.weight)
+                    #             # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight)
+                    #             # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1) ** 2) / torch.norm(layer.weight)
+                    #             G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
                                 
-                                print(f'{G_W_ratio}')
-                                # print(G_W_ratio * ZO_scale)
+                    #             print(f'{G_W_ratio}')
+                    #             # print(G_W_ratio * ZO_scale)
                     
                     print('\nWeight Norm')
                     print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
                     print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
                     print('ZO_weight_grad norm:', torch.linalg.norm(ZO_weight_grad))
                     print(f'FO * COS / ZO: {torch.linalg.norm(FO_weight_grad) * F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0) / torch.linalg.norm(ZO_weight_grad)}')
+                    
+                    if hasattr(this_layer, 'weight_mask'):
+                        ZO_weight_grad = ZO_weight_grad * this_layer.weight_mask
+                        FO_weight_grad = FO_weight_grad * this_layer.weight_mask
+                        print('masked cos sim', F.cosine_similarity(ZO_weight_grad.view(-1), FO_weight_grad.view(-1), dim=0))
+                        print('masked FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
+                        print('masked ZO_weight_grad norm:', torch.linalg.norm(ZO_weight_grad))
+                        print(f'masked FO * COS / ZO: {torch.linalg.norm(FO_weight_grad) * F.cosine_similarity(ZO_weight_grad.view(-1), FO_weight_grad.view(-1), dim=0) / torch.linalg.norm(ZO_weight_grad)}')
 
                     # print('cos sim FO/scale ZO', F.cosine_similarity((FO_weight_grad / this_layer.scale_w.view(-1,1,1,1)).view(-1), ZO_weight_grad.view(-1), dim=0))
                     # print('cos sim FO ZO/scale', F.cosine_similarity(FO_weight_grad.view(-1), (ZO_weight_grad / this_layer.scale_w.view(-1,1,1,1)).view(-1), dim=0))
@@ -289,11 +300,19 @@ class ClassificationTrainer(BaseTrainer):
                     # rand_ZO_grad[rand_indices] = ZO_weight_grad.view(-1)[rand_indices]
                     # print(f'rand {ratio} cos sim: {F.cosine_similarity(rand_FO_grad, rand_ZO_grad, dim=0)}')
 
-                    # print('\nBias Norm')
-                    # print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
-                    # print('FO_bias_grad norm:', torch.linalg.norm(FO_bias_grad))
+                    print('\nBias Norm')
+                    print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
+                    print('FO_bias_grad norm:', torch.linalg.norm(FO_bias_grad))
 
-                    # print('ZO_bias_grad norm:', torch.linalg.norm(ZO_bias_grad))
+                    print('ZO_bias_grad norm:', torch.linalg.norm(ZO_bias_grad))
+                    
+                    if hasattr(this_layer, 'bias_mask'):
+                        ZO_bias_grad = ZO_bias_grad * this_layer.bias_mask
+                        FO_bias_grad = FO_bias_grad * this_layer.bias_mask
+                        print('masked cos sim', F.cosine_similarity(ZO_bias_grad.view(-1), FO_bias_grad.view(-1), dim=0))
+                        print('masked FO_bias_grad norm:', torch.linalg.norm(FO_bias_grad))
+                        print('masked ZO_bias_grad norm:', torch.linalg.norm(ZO_bias_grad))
+                        print(f'masked FO * COS / ZO: {torch.linalg.norm(FO_bias_grad) * F.cosine_similarity(ZO_bias_grad.view(-1), FO_bias_grad.view(-1), dim=0) / torch.linalg.norm(ZO_bias_grad)}')
                     
                     if OUT_GRAD_DEBUG:
                         print('\nOut Grad Norm')

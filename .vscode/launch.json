@@ -19,6 +19,20 @@
       "justMyCode": true
     },
     {
+      "name": "corruption",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "train_cls.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}/algorithm",
+      "env": {
+        "CUDA_VISIBLE_DEVICES": "2",
+        "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
+      },
+      "args": ["configs/corruption.yaml"],
+      "justMyCode": true
+    },
+    {
       "name": "vww",
       "type": "debugpy",
       "request": "launch",

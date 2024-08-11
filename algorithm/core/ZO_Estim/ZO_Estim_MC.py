@@ -555,7 +555,7 @@ class ZO_Estim_MC(nn.Module):
             mask = splited_block.block.conv[conv_idx].binary_mask
             # mask = torch.ones_like(post_actv)
         
-        splited_block.block.conv[conv_idx].perturb_mask = mask
+        splited_block.block.conv[conv_idx].actv_mask = mask
 
         post_actv_shape = tuple(post_actv.shape)
         batch_sz = post_actv_shape[0]
@@ -898,6 +898,11 @@ class ZO_Estim_MC(nn.Module):
             
         else:
             mask = torch.ones_like(param)
+        
+        if param.dim() == 4:
+            trainable_layer.weight_mask = mask
+        elif param.dim() == 1:
+            trainable_layer.bias_mask = mask
 
         if sample_method == 'coord_basis':
             param_vec = param.view(-1)
@@ -951,11 +956,11 @@ class ZO_Estim_MC(nn.Module):
             param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (param.numel() - 1))
             if hasattr(configs.ZO_Estim, 'scale'):
                 if configs.ZO_Estim.scale == 'sqrt-dim':
-                    ZO_grad = ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
+                    param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
                 elif configs.ZO_Estim.scale == 'dim':
-                    ZO_grad = ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
+                    param_ZO_grad = param_ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
                 elif type(configs.ZO_Estim.scale) is int:
-                    ZO_grad = ZO_grad / configs.ZO_Estim.scale
+                    param_ZO_grad = param_ZO_grad / configs.ZO_Estim.scale
                 else:
                     raise NotImplementedError(f'Unknown {configs.ZO_Estim.scale}')
         else:
