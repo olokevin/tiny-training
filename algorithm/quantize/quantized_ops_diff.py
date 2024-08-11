@@ -132,7 +132,7 @@ class QuantizedElementwiseDiff(QuantizedElementwise):
 
 class _QuantizedConv2dFunc(torch.autograd.Function):
     @staticmethod
-    def forward(ctx, x, weight, bias, zero_x, effective_scale, stride, padding, dilation, groups, grad_output_prune_ratio):
+    def forward(ctx, x, weight, bias, zero_x, effective_scale, stride, padding, dilation, groups, BP_grad_prune_ratio):
         x = x.round()  # ensure x is int
         weight = weight.round()  # ensure weight is int
 
@@ -142,7 +142,7 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         ctx.groups = groups
         ctx.input_size = x.shape
         ctx.weight_size = weight.shape
-        ctx.grad_output_prune_ratio = grad_output_prune_ratio
+        ctx.BP_grad_prune_ratio = BP_grad_prune_ratio
 
         # weight = weight.int()  # - self.zero_w
         x = x - zero_x
@@ -157,24 +157,24 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         # out = out + zero_y
         
         if CONV_W_GRAD:
-            if grad_output_prune_ratio is not None:
+            if BP_grad_prune_ratio is not None:
                 topk_mask = torch.zeros_like(out, dtype=torch.bool)
 
                 ### Output actv magnitude top-k sparsity
-                # topk_dim = int((1.0-grad_output_prune_ratio) * out.numel())
+                # topk_dim = int((1.0-BP_grad_prune_ratio) * out.numel())
                 # _, indices = torch.topk(out.flatten(), topk_dim)
                 # topk_mask.view(-1)[indices] = True
 
                 ### Output actv magnitude top-k sparsity, batch-wise
                 # batch_sz = out.shape[0]
-                # topk_dim = int((1.0-grad_output_prune_ratio) * (out.numel() / batch_sz))
+                # topk_dim = int((1.0-BP_grad_prune_ratio) * (out.numel() / batch_sz))
                 # for b in range(batch_sz):
                 #     _, indices = torch.topk(out[b].flatten(), topk_dim)
                 #     topk_mask[b].view(-1)[indices] = True
                 
                 ### Output actv magnitude top-k sparsity, channel-wise
                 batch_sz = out.shape[0]
-                topk_dim = int((1.0-grad_output_prune_ratio) * (out.size(1)))
+                topk_dim = int((1.0-BP_grad_prune_ratio) * (out.size(1)))
                 for b in range(batch_sz):
                     _, indices = torch.topk(torch.linalg.norm((out[b]), dim=(1,2)), topk_dim)
                     topk_mask[b,indices,:,:] = True
@@ -194,7 +194,7 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         # which is grad_b / (effective_scale * scale_y)
         
         if CONV_W_GRAD:
-            if ctx.grad_output_prune_ratio is not None:
+            if ctx.BP_grad_prune_ratio is not None:
                 weight, effective_scale, _x, topk_mask = ctx.saved_tensors
             else:
                 weight, effective_scale, _x = ctx.saved_tensors
@@ -211,7 +211,7 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
         grad_x = _grad_conv_in
 
         if CONV_W_GRAD:
-            if ctx.grad_output_prune_ratio is not None:
+            if ctx.BP_grad_prune_ratio is not None:
                 _grad_conv_out = _grad_conv_out * topk_mask
                 
             grad_w = torch.nn.grad.conv2d_weight(_x, ctx.weight_size, _grad_conv_out,
@@ -360,7 +360,7 @@ class QuantizedConv2dDiff(QuantizedConv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1,
                  padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros',
                  w_bit=8, a_bit=None,
-                 normalization_func=None, activation_func=None, grad_output_prune_ratio=None,
+                 normalization_func=None, activation_func=None, BP_grad_prune_ratio=None,
                  zero_x=0, zero_w=0, zero_y=0,  # keep same args
                  scale_x=0, scale_w=0, scale_y=0,
                  ):
@@ -391,7 +391,7 @@ class QuantizedConv2dDiff(QuantizedConv2d):
 
         self.normalization_func = normalization_func
         self.activation_func = activation_func
-        self.grad_output_prune_ratio = grad_output_prune_ratio
+        self.BP_grad_prune_ratio = BP_grad_prune_ratio
 
         self.normalization_layer = None
         
@@ -431,7 +431,7 @@ class QuantizedConv2dDiff(QuantizedConv2d):
         self.effective_scale = (self.scale_x.to(torch.float64) * self.scale_w.to(torch.float64)).to(torch.float32)
         out = _QuantizedConv2dFunc.apply(x, self.weight, self.bias, self.zero_x,
                                          self.effective_scale, 
-                                         self.stride, self.padding, self.dilation, self.groups, self.grad_output_prune_ratio)
+                                         self.stride, self.padding, self.dilation, self.groups, self.BP_grad_prune_ratio)
         if self.normalization_layer is not None:
             out = self.normalization_layer(out)
         else:

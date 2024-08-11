@@ -47,16 +47,15 @@ data_provider:
 
 run_config:
   # warmup_epochs: 5
-  n_epochs: 50
+  n_epochs: 100
   # n_epochs: 2000
 
   ### no gradint accumulation
-  # bs256_lr: 0.1
+  bs256_lr: 0.1
   # bs256_lr: 0.01
 
-  ### gradient accumulation setting
-  base_lr: 0.0005
-  grad_accumulation_steps: 100
+  ### gradient accumulation setting. should use the corresponding lr of batch size 1 
+  grad_accumulation_steps: 128
 
   # iteration_decay: 0
 
@@ -167,7 +166,12 @@ backward_config:
   # weight_update_ratio: 1
 
 train_config:
-  # grad_output_prune_ratio: 0.9
+  # BP_grad_prune_ratio: 0.9
+  ZO_grad_prune_ratio: 0.9
+  # prune_method: top-k-param
+  # prune_method: random-k-param
+  # prune_method: top-k-channel
+  prune_method: random-k-channel
 
   # layerwise_update: 'all'
   # layerwise_update: 'one'

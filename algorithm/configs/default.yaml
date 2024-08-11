@@ -68,7 +68,8 @@ backward_config:  # for partial backward
   only_update_selected_bias: 0
 
 train_config:
-  grad_output_prune_ratio: null
+  BP_grad_prune_ratio: null
+  ZO_grad_prune_ratio: null
 
   layerwise_update: null
 

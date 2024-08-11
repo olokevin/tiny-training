@@ -16,10 +16,10 @@ from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
 from quantize.quantized_ops_diff import _TruncateActivationRange
 
 PARAM_GRAD_DEBUG = None
-# PARAM_GRAD_DEBUG = True
+PARAM_GRAD_DEBUG = True
 
 OUT_GRAD_DEBUG = None
-# OUT_GRAD_DEBUG = True
+OUT_GRAD_DEBUG = True
 
 def save_grad(layer):
     def hook(grad):
@@ -71,6 +71,7 @@ class ClassificationTrainer(BaseTrainer):
         with tqdm(total=len(self.data_loader['train']),
                   desc='Train Epoch #{}'.format(epoch),
                   disable=dist.rank() > 0 or configs.ray_tune) as t:
+            self.optimizer.zero_grad()
             for batch_idx, (images, labels) in enumerate(self.data_loader['train']):
                 images, labels = images.cuda(), labels.cuda()
                 # self.optimizer.zero_grad()
@@ -193,6 +194,9 @@ class ClassificationTrainer(BaseTrainer):
                             # this_layer = self.model[int(name_list[0])][int(name_list[1])].conv[conv_idx].normalization_layer
                             FO_weight_grad = this_layer.weight.grad.data
                             FO_bias_grad = this_layer.bias.grad.data
+                            
+                            if OUT_GRAD_DEBUG:
+                                FO_out_grad = this_layer.out_grad
 
                         # partial update config
                         if configs.backward_config.enable_backward_config:
@@ -210,6 +214,9 @@ class ClassificationTrainer(BaseTrainer):
                             if PARAM_GRAD_DEBUG:
                                 ZO_weight_grad = this_layer.weight.grad.data
                                 ZO_bias_grad = this_layer.bias.grad.data
+                                
+                                if OUT_GRAD_DEBUG:
+                                    ZO_out_grad = this_layer.out_grad
                     
                     ##### NO BP #####
                     elif configs.ZO_Estim.fc_bp == 'cls_only':
@@ -257,34 +264,52 @@ class ClassificationTrainer(BaseTrainer):
                     print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
                     print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
                     print('ZO_weight_grad norm:', torch.linalg.norm(ZO_weight_grad))
+                    print(f'FO * COS / ZO: {torch.linalg.norm(FO_weight_grad) * F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0) / torch.linalg.norm(ZO_weight_grad)}')
 
                     # print('cos sim FO/scale ZO', F.cosine_similarity((FO_weight_grad / this_layer.scale_w.view(-1,1,1,1)).view(-1), ZO_weight_grad.view(-1), dim=0))
                     # print('cos sim FO ZO/scale', F.cosine_similarity(FO_weight_grad.view(-1), (ZO_weight_grad / this_layer.scale_w.view(-1,1,1,1)).view(-1), dim=0))
                     # print('cos sim FO*scale ZO', F.cosine_similarity((FO_weight_grad * this_layer.scale_w.view(-1,1,1,1)).view(-1), ZO_weight_grad.view(-1), dim=0))
                     # print('cos sim FO ZO*scale', F.cosine_similarity(FO_weight_grad.view(-1), (ZO_weight_grad * this_layer.scale_w.view(-1,1,1,1)).view(-1), dim=0))
-                    ratio = 0.1
-                    topk_dim = int(FO_weight_grad.numel() * ratio)
-
-                    _, topk_indices = torch.topk(ZO_weight_grad.abs().flatten(), topk_dim)
-                    rand_indices = torch.randperm(FO_weight_grad.numel())[:topk_dim]
-
-                    topk_FO_grad = torch.zeros_like(FO_weight_grad.view(-1))
-                    topk_FO_grad[topk_indices] = FO_weight_grad.view(-1)[topk_indices]
-                    topk_ZO_grad = torch.zeros_like(ZO_weight_grad.view(-1))
-                    topk_ZO_grad[topk_indices] = ZO_weight_grad.view(-1)[topk_indices]
-                    print(f'top {ratio} cos sim: {F.cosine_similarity(topk_FO_grad, topk_ZO_grad, dim=0)}')
                     
-                    rand_FO_grad = torch.zeros_like(FO_weight_grad.view(-1))
-                    rand_FO_grad[rand_indices] = FO_weight_grad.view(-1)[rand_indices]
-                    rand_ZO_grad = torch.zeros_like(ZO_weight_grad.view(-1))
-                    rand_ZO_grad[rand_indices] = ZO_weight_grad.view(-1)[rand_indices]
-                    print(f'rand {ratio} cos sim: {F.cosine_similarity(rand_FO_grad, rand_ZO_grad, dim=0)}')
+                    # ratio = 0.1
+                    # topk_dim = int(FO_weight_grad.numel() * ratio)
 
-                    print('\nBias Norm')
-                    print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
-                    print('FO_bias_grad norm:', torch.linalg.norm(FO_bias_grad))
+                    # _, topk_indices = torch.topk(ZO_weight_grad.abs().flatten(), topk_dim)
+                    # rand_indices = torch.randperm(FO_weight_grad.numel())[:topk_dim]
 
-                    print('ZO_bias_grad norm:', torch.linalg.norm(ZO_bias_grad))
+                    # topk_FO_grad = torch.zeros_like(FO_weight_grad.view(-1))
+                    # topk_FO_grad[topk_indices] = FO_weight_grad.view(-1)[topk_indices]
+                    # topk_ZO_grad = torch.zeros_like(ZO_weight_grad.view(-1))
+                    # topk_ZO_grad[topk_indices] = ZO_weight_grad.view(-1)[topk_indices]
+                    # print(f'top {ratio} cos sim: {F.cosine_similarity(topk_FO_grad, topk_ZO_grad, dim=0)}')
+                    
+                    # rand_FO_grad = torch.zeros_like(FO_weight_grad.view(-1))
+                    # rand_FO_grad[rand_indices] = FO_weight_grad.view(-1)[rand_indices]
+                    # rand_ZO_grad = torch.zeros_like(ZO_weight_grad.view(-1))
+                    # rand_ZO_grad[rand_indices] = ZO_weight_grad.view(-1)[rand_indices]
+                    # print(f'rand {ratio} cos sim: {F.cosine_similarity(rand_FO_grad, rand_ZO_grad, dim=0)}')
+
+                    # print('\nBias Norm')
+                    # print('cos sim', F.cosine_similarity(FO_bias_grad.view(-1), ZO_bias_grad.view(-1), dim=0))
+                    # print('FO_bias_grad norm:', torch.linalg.norm(FO_bias_grad))
+
+                    # print('ZO_bias_grad norm:', torch.linalg.norm(ZO_bias_grad))
+                    
+                    if OUT_GRAD_DEBUG:
+                        print('\nOut Grad Norm')
+                        print('cos sim', F.cosine_similarity(FO_out_grad.view(-1), ZO_out_grad.view(-1), dim=0))
+                        print('FO_out_grad norm:', torch.linalg.norm(FO_out_grad))
+                        print('ZO_out_grad norm:', torch.linalg.norm(ZO_out_grad))
+                        print(f'FO * COS / ZO: {torch.linalg.norm(FO_out_grad) * F.cosine_similarity(FO_out_grad.view(-1), ZO_out_grad.view(-1), dim=0) / torch.linalg.norm(ZO_out_grad)}')
+                        
+                        if hasattr(this_layer, 'perturb_mask'):
+                            FO_out_grad = FO_out_grad * this_layer.perturb_mask
+                            ZO_out_grad = ZO_out_grad * this_layer.perturb_mask
+                            print('masked cos sim', F.cosine_similarity(FO_out_grad.view(-1), ZO_out_grad.view(-1), dim=0))
+                            print('masked FO_out_grad norm:', torch.linalg.norm(FO_out_grad))
+                            print('masked ZO_out_grad norm:', torch.linalg.norm(ZO_out_grad))
+                            print(f'masked FO * COS / ZO: {torch.linalg.norm(FO_out_grad) * F.cosine_similarity(FO_out_grad.view(-1), ZO_out_grad.view(-1), dim=0) / torch.linalg.norm(ZO_out_grad)}')
+
 
                 
                 # The gradients are computed for each mini-batch by calling loss.backward(). 

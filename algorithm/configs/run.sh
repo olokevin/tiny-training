@@ -13,7 +13,7 @@
 
 # corruption_types=(gaussian_noise impulse_noise shot_noise fog frost snow defocus_blur elastic_transform brightness contrast defocus_blur)
 # corruption_types=(gaussian_noise impulse_noise shot_noise fog frost)
-corruption_types=(snow defocus_blur elastic_transform brightness contrast defocus_blur)
+corruption_types=(snow elastic_transform brightness contrast defocus_blur)
 
 # Initialize a counter for the GPU index
 gpu_index=0

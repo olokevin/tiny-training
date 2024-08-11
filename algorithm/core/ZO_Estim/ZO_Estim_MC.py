@@ -486,6 +486,7 @@ class ZO_Estim_MC(nn.Module):
                     if configs.train_config.layerwise_update is None:
                         splited_block.block.conv[conv_idx].weight.grad = grad_w
                         splited_block.block.conv[conv_idx].bias.grad = grad_bias
+                        splited_block.block.conv[conv_idx].out_grad = ZO_grad
                     else:
                         ##### layerwise update
                         this_layer = splited_block.block.conv[conv_idx]
@@ -508,39 +509,53 @@ class ZO_Estim_MC(nn.Module):
 
         assert type(self.sigma) is int
 
-        if configs.train_config.grad_output_prune_ratio is not None:
-            grad_output_prune_ratio = configs.train_config.grad_output_prune_ratio
+        if configs.train_config.ZO_grad_prune_ratio is not None:
+            ZO_grad_prune_ratio = configs.train_config.ZO_grad_prune_ratio
             mask = torch.zeros_like(post_actv, dtype=torch.bool)
             
             ### Depthwise filter magnitude top-k sparsity
             # dw_channelwise = splited_block.block.conv[conv_idx+1].weight.abs().sum([1,2,3])
-            # topk_dim = int((1.0-grad_output_prune_ratio) * dw_channelwise.numel())
+            # topk_dim = int((1.0-ZO_grad_prune_ratio) * dw_channelwise.numel())
             # _, indices = torch.topk(dw_channelwise, topk_dim)
             # mask[:,indices,:,:] = True
             
             ### Output actv magnitude top-k sparsity
-            # topk_dim = int((1.0-grad_output_prune_ratio) * post_actv.numel())
+            # topk_dim = int((1.0-ZO_grad_prune_ratio) * post_actv.numel())
             # _, indices = torch.topk((post_actv-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
             # mask.view(-1)[indices] = True
 
             ### Output actv magnitude top-k sparsity, batch-wise
-            # batch_sz = post_actv.shape[0]
-            # topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
-            # for b in range(batch_sz):
-            #     _, indices = torch.topk((post_actv[b]-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
-            #     mask[b].view(-1)[indices] = True
+            if configs.train_config.prune_method == 'top-k-param':
+                batch_sz = post_actv.shape[0]
+                topk_dim = int((1.0-ZO_grad_prune_ratio) * (post_actv.numel() / batch_sz))
+                for b in range(batch_sz):
+                    _, indices = torch.topk((post_actv[b]-splited_block.block.conv[conv_idx].zero_y).flatten(), topk_dim)
+                    mask[b].view(-1)[indices] = True
+                mask = mask * splited_block.block.conv[conv_idx].binary_mask
+            
+            elif configs.train_config.prune_method == 'random-k-param':
+                ratio = 1.0-ZO_grad_prune_ratio
+                mask = torch.bernoulli(ratio*splited_block.block.conv[conv_idx].binary_mask)
             
             ### Output actv magnitude top-k sparsity, channel-wise
-            batch_sz = post_actv.shape[0]
-            topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.size(1)))
-            for b in range(batch_sz):
-                _, indices = torch.topk(torch.linalg.norm((post_actv[b]-splited_block.block.conv[conv_idx].zero_y), dim=(1,2)), topk_dim)
-                mask[b,indices,:,:] = True
+            elif configs.train_config.prune_method == 'top-k-channel':
+                batch_sz = post_actv.shape[0]
+                topk_dim = int((1.0-ZO_grad_prune_ratio) * (post_actv.size(1)))
+                for b in range(batch_sz):
+                    _, indices = torch.topk(torch.linalg.norm((post_actv[b]-splited_block.block.conv[conv_idx].zero_y), dim=(1,2)), topk_dim)
+                    mask[b,indices,:,:] = True
+                mask = mask * splited_block.block.conv[conv_idx].binary_mask
             
-            mask = mask * splited_block.block.conv[conv_idx].binary_mask
+            elif configs.train_config.prune_method == 'random-k-channel':
+                ratio = 1.0-ZO_grad_prune_ratio
+                mask = torch.bernoulli(ratio*torch.ones(tuple(post_actv.size()[0:2]), device=post_actv.device))
+                mask = mask.unsqueeze(-1).unsqueeze(-1) * splited_block.block.conv[conv_idx].binary_mask
+            
         else:
             mask = splited_block.block.conv[conv_idx].binary_mask
             # mask = torch.ones_like(post_actv)
+        
+        splited_block.block.conv[conv_idx].perturb_mask = mask
 
         post_actv_shape = tuple(post_actv.shape)
         batch_sz = post_actv_shape[0]
@@ -649,13 +664,14 @@ class ZO_Estim_MC(nn.Module):
         else:
             raise NotImplementedError('Unknown sample method')
         
-        # if configs.train_config.grad_output_prune_ratio is not None:
-        #     ZO_grad = ZO_grad * 4 / int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+        # if configs.train_config.ZO_grad_prune_ratio is not None:
+        #     ZO_grad = ZO_grad * 4 / int((1.0-ZO_grad_prune_ratio) * (post_actv.numel() / batch_sz))
         # else:
         #     ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
         
         ### ZO gradient scale adjustment
-        ZO_grad = ZO_grad * math.sqrt(self.n_sample / (torch.sum(mask).item() / batch_sz - 1))
+        # ZO_grad = ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+        ZO_grad = ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
         # ZO_grad = ZO_grad / 1000
         
         if local_backward_args == True:
@@ -674,15 +690,15 @@ class ZO_Estim_MC(nn.Module):
 
         assert type(self.sigma) is int
         assert hasattr(splited_block.block, 'binary_mask')
-        if configs.train_config.grad_output_prune_ratio is not None:
-            grad_output_prune_ratio = configs.train_config.grad_output_prune_ratio
+        if configs.train_config.ZO_grad_prune_ratio is not None:
+            ZO_grad_prune_ratio = configs.train_config.ZO_grad_prune_ratio
             mask = torch.zeros_like(post_actv, dtype=torch.bool)
 
-            topk_dim = int((1.0-grad_output_prune_ratio) * post_actv.numel())
+            topk_dim = int((1.0-ZO_grad_prune_ratio) * post_actv.numel())
             _, indices = torch.topk((post_actv-splited_block.block.conv[-1].zero_y).flatten(), topk_dim)
             mask.view(-1)[indices] = True
             # batch_sz = post_actv.shape[0]
-            # topk_dim = int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+            # topk_dim = int((1.0-ZO_grad_prune_ratio) * (post_actv.numel() / batch_sz))
             # for b in range(batch_sz):
             #     _, indices = torch.topk((post_actv[b]-splited_block.block.conv[-1].zero_y).flatten(), topk_dim)
             #     mask[b].view(-1)[indices] = True
@@ -786,8 +802,8 @@ class ZO_Estim_MC(nn.Module):
         else:
             raise NotImplementedError('Unknown sample method')
 
-        if configs.train_config.grad_output_prune_ratio is not None:
-            ZO_grad = ZO_grad * 4 / int((1.0-grad_output_prune_ratio) * (post_actv.numel() / batch_sz))
+        if configs.train_config.ZO_grad_prune_ratio is not None:
+            ZO_grad = ZO_grad * 4 / int((1.0-ZO_grad_prune_ratio) * (post_actv.numel() / batch_sz))
         else:
             ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
         
