@@ -101,6 +101,7 @@ class BaseTrainer(object):
             logger.info(f'epoch {epoch}: f{train_info_dict}')
             
             if configs.wandb:
+                train_info_dict['train/epoch'] = epoch
                 wandb.log(train_info_dict)
 
             if (epoch + 1) % configs.run_config.eval_per_epochs == 0 \
@@ -114,6 +115,7 @@ class BaseTrainer(object):
                 val_info_dict['val/best'] = self.best_val
                 logger.info(f'epoch {epoch}: {val_info_dict}')
                 if configs.wandb:
+                    val_info_dict['val/epoch'] = epoch
                     wandb.log(val_info_dict)
                 
                 # save model

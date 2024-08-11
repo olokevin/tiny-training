@@ -174,9 +174,9 @@ train_config:
   # BP_grad_prune_ratio: 0.9
   ZO_grad_prune_ratio: 0.9
   # prune_method: top-k-param
-  # prune_method: random-k-param
+  prune_method: random-k-param
   # prune_method: top-k-channel
-  prune_method: random-k-channel
+  # prune_method: random-k-channel
 
   # layerwise_update: 'all'
   # layerwise_update: 'one'
@@ -214,6 +214,10 @@ ZO_Estim:
   n_sample: 10
   signSGD: False
 
+  scale: sqrt-dim
+  # scale: dim
+  # scale: 100
+
   # trainable_param_list: all
   trainable_param_list: ['weight', 'bias']
   # trainable_param_list: ['weight']
@@ -246,35 +250,35 @@ ZO_Estim:
   # sample_method: coord_basis
 
   ############################## Activation Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: activation
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: activation
 
-  sigma: 10
+  # sigma: 10
 
-  perturb_before_round: 0
+  # perturb_before_round: 0
 
-  sync_batch_perturb: 0
-  # sync_batch_perturb: 1
+  # sync_batch_perturb: 0
+  # # sync_batch_perturb: 1
 
   ############################## Param Perturbation ##############################
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: param
+  obj_fn_type: classifier_layerwise
+  perturb_method: param
 
-  # sigma: {
-  #   'weight': 1,
-  #   'bias': 100,
+  sigma: {
+    'weight': 1,
+    'bias': 100,
 
-  #   # 'scale_y': 0.01,
-  #   # 'scale_w': 0.001,
+    # 'scale_y': 0.01,
+    # 'scale_w': 0.001,
 
-  #   # 'gamma': 0.1,
-  #   # 'beta': 0.1,
-  # }
+    # 'gamma': 0.1,
+    # 'beta': 0.1,
+  }
 
-  # param_update_method: None
-  # # param_update_method: layerwise
-  # # param_update_method: blockwise
-  # # param_update_method: modelwise
+  param_update_method: None
+  # param_update_method: layerwise
+  # param_update_method: blockwise
+  # param_update_method: modelwise
 
   ############################## Weight Perturbation ##############################
   # obj_fn_type: classifier

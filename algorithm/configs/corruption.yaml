@@ -207,7 +207,11 @@ ZO_Estim:
 
   name: ZO_Estim_MC
   n_sample: 10
-  signSGD: False
+  signSGD: False'
+
+  scale: sqrt-dim
+  # scale: dim
+  # scale: 100
 
   # trainable_param_list: all
   trainable_param_list: ['weight', 'bias']

@@ -670,9 +670,15 @@ class ZO_Estim_MC(nn.Module):
         #     ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
         
         ### ZO gradient scale adjustment
-        # ZO_grad = ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
-        ZO_grad = ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
-        # ZO_grad = ZO_grad / 1000
+        if hasattr(configs.ZO_Estim, 'scale'):
+            if configs.ZO_Estim.scale == 'sqrt-dim':
+                ZO_grad = ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+            elif configs.ZO_Estim.scale == 'dim':
+                ZO_grad = ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+            elif type(configs.ZO_Estim.scale) is int:
+                ZO_grad = ZO_grad / configs.ZO_Estim.scale
+            else:
+                raise NotImplementedError(f'Unknown {configs.ZO_Estim.scale}')
         
         if local_backward_args == True:
             return ZO_grad, pre_activ, mask
@@ -871,8 +877,27 @@ class ZO_Estim_MC(nn.Module):
         param_ZO_grad = torch.zeros_like(param, device=self.device)
         loss_diff = 0
 
-        # if sigma.numel() > 1:
-        #     sigma = sigma.view(-1,1,1,1)
+        if configs.train_config.ZO_grad_prune_ratio is not None:
+            ZO_grad_prune_ratio = configs.train_config.ZO_grad_prune_ratio
+            mask = torch.zeros_like(param, dtype=torch.bool)
+
+            ### Output actv magnitude top-k sparsity, batch-wise
+            if configs.train_config.prune_method == 'top-k-param':
+                raise NotImplementedError('top-k-param not implemented yet')
+            
+            elif configs.train_config.prune_method == 'random-k-param':
+                ratio = 1.0-ZO_grad_prune_ratio
+                mask = torch.bernoulli(ratio*torch.ones_like(param))
+            
+            ### Output actv magnitude top-k sparsity, channel-wise
+            elif configs.train_config.prune_method == 'top-k-channel':
+                raise NotImplementedError('top-k-channel not implemented yet')
+            
+            elif configs.train_config.prune_method == 'random-k-channel':
+                raise NotImplementedError('random-k-channel not implemented yet')
+            
+        else:
+            mask = torch.ones_like(param)
 
         if sample_method == 'coord_basis':
             param_vec = param.view(-1)
@@ -896,7 +921,7 @@ class ZO_Estim_MC(nn.Module):
                     raise NotImplementedError('Unknown estimate method')
         elif sample_method == 'bernoulli':
             for i in range(self.n_sample):
-                u = self._sample_unit_sphere_quantized(param.shape, sample_method, self.device)
+                u = self._sample_unit_sphere_quantized(param.shape, sample_method, self.device) * mask
                 # u = u / math.sqrt((self.n_sample + u.numel() - 1) / 4 / self.n_sample)
                 # pos
                 param.add_(u * sigma)
@@ -924,6 +949,15 @@ class ZO_Estim_MC(nn.Module):
             param_ZO_grad = param_ZO_grad / self.n_sample
             
             param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (param.numel() - 1))
+            if hasattr(configs.ZO_Estim, 'scale'):
+                if configs.ZO_Estim.scale == 'sqrt-dim':
+                    ZO_grad = ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
+                elif configs.ZO_Estim.scale == 'dim':
+                    ZO_grad = ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
+                elif type(configs.ZO_Estim.scale) is int:
+                    ZO_grad = ZO_grad / configs.ZO_Estim.scale
+                else:
+                    raise NotImplementedError(f'Unknown {configs.ZO_Estim.scale}')
         else:
             return NotImplementedError('sample method not implemented yet')
 
