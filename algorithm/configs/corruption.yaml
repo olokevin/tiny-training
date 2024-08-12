@@ -1,6 +1,6 @@
 resume: 0
-wandb: 1
-project: CIFAR_C_ZO_sparse
+# wandb: 1
+# project: CIFAR_C_ZO_sparse
 
 data_provider:
   # dataset: flowers
@@ -82,12 +82,12 @@ backward_config:
   # quantize_gradient: 1
 
   ##### Full model
-  # enable_backward_config: 0
+  enable_backward_config: 0
 
   ##### cls-only
-  enable_backward_config: 1
-  n_bias_update: 0
-  n_weight_update: 0
+  # enable_backward_config: 1
+  # n_bias_update: 0
+  # n_weight_update: 0
 
   ##### sparse update (100KB scheme): 88.84%
   # enable_backward_config: 1  
@@ -167,9 +167,9 @@ backward_config:
 
 train_config:
   # BP_grad_prune_ratio: 0.9
-  ZO_grad_prune_ratio: 0.9
+  # ZO_grad_prune_ratio: 0.9
   # prune_method: top-k-param
-  prune_method: random-k-param
+  # prune_method: random-k-param
   # prune_method: top-k-channel
   # prune_method: random-k-channel
 
@@ -207,10 +207,10 @@ ZO_Estim:
 
   name: ZO_Estim_MC
   n_sample: 100
-  signSGD: False'
+  signSGD: False
 
   # scale: sqrt-dim
-  scale: dim
+  # scale: dim
   # scale: 100
 
   # trainable_param_list: all
@@ -256,25 +256,33 @@ ZO_Estim:
   # sync_batch_perturb: 0
   # # sync_batch_perturb: 1
 
-  ############################## Param Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: param
+  ############################## Layerwise Param Perturbation ##############################
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: param
 
-  sigma: {
-    'weight': 1,
-    'bias': 100,
+  # sigma: {
+  #   'weight': 1,
+  #   'bias': 100,
 
-    # 'scale_y': 0.01,
-    # 'scale_w': 0.001,
+  #   # 'scale_y': 0.01,
+  #   # 'scale_w': 0.001,
 
-    # 'gamma': 0.1,
-    # 'beta': 0.1,
-  }
+  #   # 'gamma': 0.1,
+  #   # 'beta': 0.1,
+  # }
+
+  # param_update_method: None
+  # # param_update_method: layerwise
+  # # param_update_method: blockwise
+  # # param_update_method: modelwise
+
+  ############################## Modelwise Param Perturbation ##############################
+  obj_fn_type: classifier
+  perturb_method: all_param
+
+  sigma: 1
 
   param_update_method: None
-  # param_update_method: layerwise
-  # param_update_method: blockwise
-  # param_update_method: modelwise
 
   ############################## Weight Perturbation ##############################
   # obj_fn_type: classifier

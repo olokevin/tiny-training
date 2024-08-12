@@ -906,6 +906,7 @@ class ZO_Estim_MC(nn.Module):
 
         if sample_method == 'coord_basis':
             param_vec = param.view(-1)
+            param_ZO_grad = param_ZO_grad.view(-1)
             for i in range(param_dim):
                 old_param_vec = param_vec[i] * 1
                 # pos
@@ -1063,17 +1064,6 @@ class ZO_Estim_MC(nn.Module):
         return loss_diff
     
     def get_param_ZO_gradient(self, old_loss, verbose=False):
-
-        # name_list = []
-        # FO_norm_list = []
-        # FO_norm_div_sqrt_d_list = []
-        # ZO_norm_list = []
-        # ZO_norm_div_sqrt_d_list = []
-        # loss_diff_list = []
-
-        # for block in self.model[1]:
-        #     block.q_add=None
-
         for trainable_layer_name in self.trainable_layer_list:
             trainable_layer_name = trainable_layer_name.split('.')
             block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
@@ -1097,28 +1087,7 @@ class ZO_Estim_MC(nn.Module):
                 ##### block
                 for conv_idx in range(len(splited_block.block.conv)):
                     ##### Estimate gradient
-                    trainable_layer = splited_block.block.conv[conv_idx] 
-
-                    # name_list.append(f'{splited_block.idx - 1}.{conv_idx}')
-                    # FO_norm = torch.linalg.norm(trainable_layer.weight.grad.data)
-                    # FO_norm = torch.linalg.norm(trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1, 1, 1, 1))
-                    # FO_norm = torch.linalg.norm(trainable_layer.weight.grad.data * trainable_layer.weight.data)
-                    # FO_norm = torch.linalg.norm(trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1, 1, 1, 1)) ** 2 / torch.linalg.norm(trainable_layer.weight.data)
-                    
-                    # FO_norm_list.append(FO_norm)
-                    # FO_norm_div_sqrt_d_list.append(FO_norm / math.sqrt(trainable_layer.weight.grad.data.numel()))
-                    
-                    # loss_diff = self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
-                    # loss_diff_list.append(loss_diff)
-                    
-                    # ZO_norm = torch.linalg.norm(trainable_layer.weight.grad.data)
-                    # ZO_norm = torch.linalg.norm(trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1, 1, 1, 1))
-                    # ZO_norm = torch.linalg.norm(trainable_layer.weight.grad.data * trainable_layer.weight.data)
-                    # ZO_norm = torch.linalg.norm(trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1, 1, 1, 1)) ** 2 / torch.linalg.norm(trainable_layer.weight.data)
-                    
-                    # ZO_norm_list.append(ZO_norm)
-                    # ZO_norm_div_sqrt_d_list.append(ZO_norm / math.sqrt(trainable_layer.weight.grad.data.numel()))
-                    
+                    trainable_layer = splited_block.block.conv[conv_idx]             
                     ##### conv update
                     if configs.ZO_Estim.param_update_method == 'layerwise':
                         ##### layerwise update
@@ -1138,21 +1107,6 @@ class ZO_Estim_MC(nn.Module):
                     this_layer.weight.data.sub_( (lr * this_layer.weight.grad.data / this_layer.scale_w.view(-1, 1, 1, 1) ** 2).round().clamp(- 2 ** (this_layer.w_bit - 1), 2 ** (this_layer.w_bit - 1) - 1) )
                     this_layer.bias.data.sub_( (lr * this_layer.bias.grad.data / (this_layer.scale_x * this_layer.scale_w) ** 2).round().clamp(- 2 ** (4*this_layer.w_bit - 1), 2 ** (4*this_layer.w_bit - 1) - 1) )
                     
-        # logger.info(f'FO_weight_grad norm')
-        # for norm in FO_norm_list:
-        #     logger.info('{:.4e}'.format(norm.item()))
-        # logger.info(f'FO_weight_grad norm/√d')
-        # for norm in FO_norm_div_sqrt_d_list:
-        #     logger.info('{:.4e}'.format(norm.item()))
-        # logger.info(f'ZO_weight_grad norm')
-        # for norm in ZO_norm_list:
-        #     logger.info('{:.4e}'.format(norm.item()))
-        # logger.info(f'ZO_weight_grad norm/√d')
-        # for norm in ZO_norm_div_sqrt_d_list:
-        #     logger.info('{:.4e}'.format(norm.item()))
-        # logger.info(f'ZO_loss_diff')
-        # for norm in loss_diff_list:
-        #     logger.info('{:.4e}'.format(norm.item()))
         return None
     
     # def get_scale_ZO_gradient(self, old_loss, verbose=False):
@@ -1289,6 +1243,54 @@ class ZO_Estim_MC(nn.Module):
     #                     pass
         
     #     return None
+    def get_all_param_ZO_gradient(self, old_loss):
+        dimension = 0
+        for name, param in self.model.named_parameters():
+            if any(keyword in name for keyword in self.trainable_layer_list):
+                dimension += param.numel()
+                param.grad = torch.zeros_like(param)
+        
+        if self.sample_method == 'coord_basis':
+            raise NotImplementedError
+        else:
+            u = dict()
+            n_sample = self.n_sample
+            for i in range(n_sample):
+                ### Generate random perturbation with the same shape as the parameter
+                for name, param in self.model.named_parameters():
+                    if any(keyword in name for keyword in self.trainable_layer_list):
+                        u[name] = self._sample_unit_sphere_quantized(param.shape, self.sample_method, self.device)
+                
+                # if self.normalize_perturbation:
+                #     p_sigma = self.sigma / torch.linalg.vector_norm(torch.cat([splited_param.u.view(-1) for splited_param in self.splited_param_list]))
+                # else:
+                p_sigma = self.sigma
+                
+                ### Add perturbation to the parameter
+                # pos
+                for name, param in self.model.named_parameters():
+                    if any(keyword in name for keyword in self.trainable_layer_list):
+                        param.add_(u[name] * p_sigma)
+                    
+                _, pos_loss = self.obj_fn()
+
+                ### Estimate gradient
+                if self.estimate_method == 'forward':
+                    for name, param in self.model.named_parameters():
+                        if any(keyword in name for keyword in self.trainable_layer_list):
+                            param.sub_(u[name] * p_sigma)
+                            param.grad += (n_sample / (n_sample+dimension-1)) * (pos_loss - old_loss) / self.sigma / n_sample * u[name]
+                elif self.estimate_method == 'antithetic':
+                    for name, param in self.model.named_parameters():
+                        if any(keyword in name for keyword in self.trainable_layer_list):
+                            param.sub_(u[name] * p_sigma * 2)
+                    _, neg_loss = self.obj_fn()
+                    for name, param in self.model.named_parameters():
+                        if any(keyword in name for keyword in self.trainable_layer_list):
+                            param.add_(u[name] * p_sigma)
+                            param.grad += (n_sample / (n_sample+dimension-1)) * (pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name]
+                        
+        return None
     
     def update_obj_fn(self, obj_fn):
         self.obj_fn = obj_fn
@@ -1312,6 +1314,9 @@ class ZO_Estim_MC(nn.Module):
         
         elif self.perturb_method == 'param':
             self.estim_grads = self.get_param_ZO_gradient(old_loss=old_loss)
+        
+        elif self.perturb_method == 'all_param':
+            self.estim_grads = self.get_all_param_ZO_gradient(old_loss=old_loss)
 
         else:
             raise ValueError('Unknown perturb_method')
