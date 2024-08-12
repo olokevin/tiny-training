@@ -167,9 +167,9 @@ backward_config:
 
 train_config:
   # BP_grad_prune_ratio: 0.9
-  # ZO_grad_prune_ratio: 0.9
+  ZO_grad_prune_ratio: 0.9
   # prune_method: top-k-param
-  # prune_method: random-k-param
+  prune_method: random-k-param
   # prune_method: top-k-channel
   # prune_method: random-k-channel
 
@@ -242,8 +242,8 @@ ZO_Estim:
 
   # sample_method: uniform
   # sample_method: gaussian
-  sample_method: bernoulli
-  # sample_method: coord_basis
+  # sample_method: bernoulli
+  sample_method: coord_basis
 
   ############################## Activation Perturbation ##############################
   # obj_fn_type: classifier_layerwise
@@ -257,32 +257,32 @@ ZO_Estim:
   # # sync_batch_perturb: 1
 
   ############################## Layerwise Param Perturbation ##############################
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: param
+  obj_fn_type: classifier_layerwise
+  perturb_method: param
 
-  # sigma: {
-  #   'weight': 1,
-  #   'bias': 100,
+  sigma: {
+    'weight': 1,
+    'bias': 100,
 
-  #   # 'scale_y': 0.01,
-  #   # 'scale_w': 0.001,
+    # 'scale_y': 0.01,
+    # 'scale_w': 0.001,
 
-  #   # 'gamma': 0.1,
-  #   # 'beta': 0.1,
-  # }
-
-  # param_update_method: None
-  # # param_update_method: layerwise
-  # # param_update_method: blockwise
-  # # param_update_method: modelwise
-
-  ############################## Modelwise Param Perturbation ##############################
-  obj_fn_type: classifier
-  perturb_method: all_param
-
-  sigma: 1
+    # 'gamma': 0.1,
+    # 'beta': 0.1,
+  }
 
   param_update_method: None
+  # param_update_method: layerwise
+  # param_update_method: blockwise
+  # param_update_method: modelwise
+
+  ############################## Modelwise Param Perturbation ##############################
+  # obj_fn_type: classifier
+  # perturb_method: all_param
+
+  # sigma: 1
+
+  # param_update_method: None
 
   ############################## Weight Perturbation ##############################
   # obj_fn_type: classifier

@@ -907,24 +907,27 @@ class ZO_Estim_MC(nn.Module):
         if sample_method == 'coord_basis':
             param_vec = param.view(-1)
             param_ZO_grad = param_ZO_grad.view(-1)
+            mask = mask.view(-1)
             for i in range(param_dim):
-                old_param_vec = param_vec[i] * 1
-                # pos
-                param_vec[i] = param_vec[i] + sigma
-                _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
-                param_vec[i] = param_vec[i] - sigma
-
-                # neg
-                if estimate_method == 'forward':
-                    param_ZO_grad[i] = (pos_loss - old_loss) / sigma
-                elif estimate_method == 'antithetic':
-                    param_vec[i] = param_vec[i] - sigma
-                    _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
-                    param_vec[i] = param_vec[i] + sigma
-
-                    param_ZO_grad[i] = (pos_loss - neg_loss) / 2 / sigma
+                if mask[i] == 0:
+                    pass
                 else:
-                    raise NotImplementedError('Unknown estimate method')
+                    # pos
+                    param_vec[i] = param_vec[i] + sigma
+                    _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+                    param_vec[i] = param_vec[i] - sigma
+
+                    # neg
+                    if estimate_method == 'forward':
+                        param_ZO_grad[i] = (pos_loss - old_loss) / sigma
+                    elif estimate_method == 'antithetic':
+                        param_vec[i] = param_vec[i] - sigma
+                        _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+                        param_vec[i] = param_vec[i] + sigma
+
+                        param_ZO_grad[i] = (pos_loss - neg_loss) / 2 / sigma
+                    else:
+                        raise NotImplementedError('Unknown estimate method')
         elif sample_method == 'bernoulli':
             for i in range(self.n_sample):
                 u = self._sample_unit_sphere_quantized(param.shape, sample_method, self.device) * mask
