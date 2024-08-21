@@ -957,9 +957,10 @@ class ZO_Estim_MC(nn.Module):
 
             param_ZO_grad = param_ZO_grad / self.n_sample
             
-            param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (param.numel() - 1))
             if hasattr(configs.ZO_Estim, 'scale'):
                 if configs.ZO_Estim.scale == 'sqrt-dim':
+                    # param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (param.numel() - 1))
+                    # param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (self.n_sample + param.numel() + 1))
                     param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
                 elif configs.ZO_Estim.scale == 'dim':
                     param_ZO_grad = param_ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
@@ -1282,7 +1283,13 @@ class ZO_Estim_MC(nn.Module):
                     for name, param in self.model.named_parameters():
                         if any(keyword in name for keyword in self.trainable_layer_list):
                             param.sub_(u[name] * p_sigma)
-                            param.grad += (n_sample / (n_sample+dimension-1)) * (pos_loss - old_loss) / self.sigma / n_sample * u[name]
+                            if hasattr(configs.ZO_Estim, 'scale'):
+                                if configs.ZO_Estim.scale == 'sqrt-dim':
+                                    param.grad += math.sqrt(n_sample / (n_sample+dimension-1)) * (pos_loss - old_loss) / self.sigma / n_sample * u[name]
+                                elif configs.ZO_Estim.scale == 'dim':
+                                    param.grad += (n_sample / (n_sample+dimension-1)) * (pos_loss - old_loss) / self.sigma / n_sample * u[name]
+                            else:
+                                param.grad += (pos_loss - old_loss) / self.sigma / n_sample * u[name]
                 elif self.estimate_method == 'antithetic':
                     for name, param in self.model.named_parameters():
                         if any(keyword in name for keyword in self.trainable_layer_list):
@@ -1291,7 +1298,14 @@ class ZO_Estim_MC(nn.Module):
                     for name, param in self.model.named_parameters():
                         if any(keyword in name for keyword in self.trainable_layer_list):
                             param.add_(u[name] * p_sigma)
-                            param.grad += (n_sample / (n_sample+dimension-1)) * (pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name]
+                            if hasattr(configs.ZO_Estim, 'scale'):
+                                if configs.ZO_Estim.scale == 'sqrt-dim':
+                                    param.grad += math.sqrt(n_sample / (n_sample+dimension-1)) * (pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name]
+                                elif configs.ZO_Estim.scale == 'dim':
+                                    param.grad += (n_sample / (n_sample+dimension-1)) * (pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name]
+                            else:
+                                param.grad += (pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name]
+                            
                         
         return None
     

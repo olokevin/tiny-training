@@ -1,6 +1,6 @@
 resume: 0
-# wandb: 1
-# project: CIFAR_C_ZO_sparse
+wandb: 1
+project: CIFAR_C_scaling
 
 data_provider:
   # dataset: flowers
@@ -31,6 +31,7 @@ data_provider:
   train_n: 1000
   corruption_type: gaussian_noise
   # corruption_type: [gaussian_noise, impulse_noise, shot_noise, fog, frost, snow, defocus_blur, elastic_transform, brightness, contrast, defocus_blur]
+  # corruption_type: [gaussian_noise, shot_noise, impulse_noise, speckle_noise, gaussian_blur, defocus_blur, glass_blur, motion_blur, zoom_blur, snow, frost, fog, brightness, contrast, elastic_transform, pixelate, jpeg_compression, saturate, spatter]
   load_model_path: './assets/mcunet_in1_cifar10.pth'
 
   # dataset: image_folder
@@ -47,15 +48,20 @@ data_provider:
 
 run_config:
   # warmup_epochs: 5
-  n_epochs: 100
+  # n_epochs: 50
+  n_epochs: 200
   # n_epochs: 2000
+  # n_epochs: 50000
 
   ### no gradint accumulation
-  bs256_lr: 0.1
+  # bs256_lr: 0.1
   # bs256_lr: 0.01
+  # bs256_lr: 0.001
+  bs256_lr: 0.0001
 
   ### gradient accumulation setting. should use the corresponding lr of batch size 1 
-  # grad_accumulation_steps: 128
+  # base_lr: 0.004
+  # grad_accumulation_steps: 100
 
   # iteration_decay: 0
 
@@ -80,14 +86,15 @@ net_config:
 
 backward_config:
   # quantize_gradient: 1
+  # n_bit: 8
 
   ##### Full model
-  enable_backward_config: 0
+  # enable_backward_config: 0
 
   ##### cls-only
-  # enable_backward_config: 1
-  # n_bias_update: 0
-  # n_weight_update: 0
+  enable_backward_config: 1
+  n_bias_update: 0
+  n_weight_update: 0
 
   ##### sparse update (100KB scheme): 88.84%
   # enable_backward_config: 1  
@@ -99,16 +106,16 @@ backward_config:
   ##### PokeEngine
   # enable_backward_config: 1  
   # n_bias_update: 22
-  # manual_weight_idx: 24-27-30-33
-  # weight_update_ratio: 1-1-0.5-1
+  # manual_weight_idx: 24-27-30
+  # weight_update_ratio: 1-1-0.5
 
-  ##### select 6 layers
+  ##### ZO-RGN selected 5 layers
   # enable_backward_config: 1  
   # n_bias_update: 42
-  # manual_weight_idx: 9-12-15-21-24-30
+  # manual_weight_idx: 9-12-15-18-21
   # # manual_weight_idx: 9-12-15-18-21-27
   # # manual_weight_idx: 6-9-12-15-18-21
-  # weight_update_ratio: 1-1-1-1-1-1
+  # weight_update_ratio: 1-1-1-1-1
 
   ##### update last 2 blocks
   # enable_backward_config: 1 
@@ -126,8 +133,8 @@ backward_config:
   # n_weight_update: 0
 
   ########## Corruption datasets ##########
-  # freeze_fc: 1
-  # only_update_selected_bias: 1
+  freeze_fc: 1
+  only_update_selected_bias: 1
 
   ##### first 2 blocks
   # enable_backward_config: 1  
@@ -167,9 +174,9 @@ backward_config:
 
 train_config:
   # BP_grad_prune_ratio: 0.9
-  ZO_grad_prune_ratio: 0.9
+  # ZO_grad_prune_ratio: 0.9
   # prune_method: top-k-param
-  prune_method: random-k-param
+  # prune_method: random-k-param
   # prune_method: top-k-channel
   # prune_method: random-k-channel
 
@@ -228,9 +235,9 @@ ZO_Estim:
   # trainable_layer_list: ['1.8']
   # trainable_layer_list: ['1.12', '1.13']
   # trainable_layer_list: ['1.7', '1.8', '1.9', '1.10', '1.11', '1.12', '1.13']
-  # trainable_layer_list: ['1.1.conv.0']
+  # trainable_layer_list: ['1.8.conv.0']
   # trainable_layer_list: ['1.12.conv.0', '1.13.conv.0']
-  trainable_layer_list: ['1.1.conv.0', '1.2.conv.0', '1.3.conv.0', '1.4.conv.0', '1.5.conv.0', '1.7.conv.0']
+  trainable_layer_list: ['1.3.conv.0', '1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
   # trainable_layer_list: ['1.3.conv.0', '1.4.conv.0', '1.5.conv.0', '1.7.conv.0', '1.8.conv.0', '1.10.conv.0']
   # trainable_layer_list: ['1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.11.conv.0']
   # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
@@ -242,8 +249,8 @@ ZO_Estim:
 
   # sample_method: uniform
   # sample_method: gaussian
-  # sample_method: bernoulli
-  sample_method: coord_basis
+  sample_method: bernoulli
+  # sample_method: coord_basis
 
   ############################## Activation Perturbation ##############################
   # obj_fn_type: classifier_layerwise
