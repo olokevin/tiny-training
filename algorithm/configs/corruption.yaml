@@ -42,9 +42,9 @@ data_provider:
   # root: '~/dataset/pets'
   # num_classes: 37
 
-  base_batch_size: 1
+  # base_batch_size: 1
   # base_batch_size: 128
-  # base_batch_size: 100
+  base_batch_size: 100
 
 run_config:
   # warmup_epochs: 5
@@ -215,7 +215,7 @@ train_config:
   }
   
 ZO_Estim:
-  # en: True
+  en: True
 
   # fc_bp: False
   # fc_bp: cls_only
@@ -226,7 +226,7 @@ ZO_Estim:
   n_sample: 1
   signSGD: False
 
-  # scale: sqrt-dim
+  scale: sqrt-dim
   # scale: dim
   # scale: 100
 

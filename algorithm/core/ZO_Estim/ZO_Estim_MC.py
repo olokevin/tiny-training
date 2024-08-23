@@ -862,6 +862,129 @@ class ZO_Estim_MC(nn.Module):
         
         return None    
     
+    ##### No perturbation Clamp
+    
+    # def get_single_param_ZO_gradient(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method, p_scale=False):
+    #     param_dim = param.numel()
+    #     param_shape = param.shape
+        
+    #     fp_sigma = sigma
+
+    #     if type(sigma) is not int:
+    #         L = self.n_sample
+    #         d = param.data.numel()
+    #         sigma = sigma * math.sqrt(4*L/(L+d-1)) / trainable_layer.scale_w.view(-1, 1, 1, 1)
+    #         sigma = sigma.round()
+        
+    #     # if type(sigma) is not int:
+    #     #     sigma = sigma / trainable_layer.scale_w.view(-1, 1, 1, 1)
+    #     #     sigma = sigma.round()
+                
+    #     param_ZO_grad = torch.zeros_like(param, device=self.device)
+    #     loss_diff = 0
+
+    #     if configs.train_config.ZO_grad_prune_ratio is not None:
+    #         ZO_grad_prune_ratio = configs.train_config.ZO_grad_prune_ratio
+    #         mask = torch.zeros_like(param, dtype=torch.bool)
+
+    #         ### Output actv magnitude top-k sparsity, batch-wise
+    #         if configs.train_config.prune_method == 'top-k-param':
+    #             raise NotImplementedError('top-k-param not implemented yet')
+            
+    #         elif configs.train_config.prune_method == 'random-k-param':
+    #             ratio = 1.0-ZO_grad_prune_ratio
+    #             mask = torch.bernoulli(ratio*torch.ones_like(param))
+            
+    #         ### Output actv magnitude top-k sparsity, channel-wise
+    #         elif configs.train_config.prune_method == 'top-k-channel':
+    #             raise NotImplementedError('top-k-channel not implemented yet')
+            
+    #         elif configs.train_config.prune_method == 'random-k-channel':
+    #             raise NotImplementedError('random-k-channel not implemented yet')
+            
+    #     else:
+    #         mask = torch.ones_like(param)
+        
+    #     if param.dim() == 4:
+    #         trainable_layer.weight_mask = mask
+    #     elif param.dim() == 1:
+    #         trainable_layer.bias_mask = mask
+
+    #     if sample_method == 'coord_basis':
+    #         param_vec = param.view(-1)
+    #         param_ZO_grad = param_ZO_grad.view(-1)
+    #         mask = mask.view(-1)
+    #         for i in range(param_dim):
+    #             if mask[i] == 0:
+    #                 pass
+    #             else:
+    #                 # pos
+    #                 param_vec[i] = param_vec[i] + sigma
+    #                 _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+    #                 param_vec[i] = param_vec[i] - sigma
+
+    #                 # neg
+    #                 if estimate_method == 'forward':
+    #                     param_ZO_grad[i] = (pos_loss - old_loss) / sigma
+    #                 elif estimate_method == 'antithetic':
+    #                     param_vec[i] = param_vec[i] - sigma
+    #                     _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+    #                     param_vec[i] = param_vec[i] + sigma
+
+    #                     param_ZO_grad[i] = (pos_loss - neg_loss) / 2 / sigma
+    #                 else:
+    #                     raise NotImplementedError('Unknown estimate method')
+    #     elif sample_method == 'bernoulli':
+    #         old_param = param.clone()
+    #         for i in range(self.n_sample):
+    #             u = self._sample_unit_sphere_quantized(param.shape, sample_method, self.device) * mask
+    #             # u = u / math.sqrt((self.n_sample + u.numel() - 1) / 4 / self.n_sample)
+    #             # pos
+    #             param.add_(u * sigma)
+    #             # if type(trainable_layer) == QuantizedMbBlock:
+    #             #     w_bit = trainable_layer.w_bit
+    #             #     param.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
+    #             _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+    #             param.sub_(u * sigma)
+
+    #             # neg
+    #             if estimate_method == 'forward':
+    #                 # loss_diff += (pos_loss - old_loss) / fp_sigma / self.n_sample
+    #                 param_ZO_grad += (pos_loss - old_loss)  * u
+    #             elif estimate_method == 'antithetic':
+    #                 param.sub_(u * sigma)
+    #                 _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+    #                 param.add_(u * sigma)
+
+    #                 # loss_diff += (pos_loss -  neg_loss) / 2 / sigma / self.n_sample
+    #                 # loss_diff += (pos_loss - 2*old_loss + neg_loss) / fp_sigma**2 / self.n_sample
+    #                 param_ZO_grad += (pos_loss - neg_loss) / 2 * u
+            
+    #         if type(sigma) is int:
+    #             param_ZO_grad = param_ZO_grad / sigma
+    #         else: 
+    #             # param_ZO_grad = param_ZO_grad / fp_sigma
+    #             param_ZO_grad = param_ZO_grad * torch.where(sigma != 0, 1 / sigma, sigma)
+
+    #         param_ZO_grad = param_ZO_grad / self.n_sample
+            
+    #         if hasattr(configs.ZO_Estim, 'scale'):
+    #             if configs.ZO_Estim.scale == 'sqrt-dim':
+    #                 # param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (param.numel() - 1))
+    #                 # param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (self.n_sample + param.numel() + 1))
+    #                 param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
+    #             elif configs.ZO_Estim.scale == 'dim':
+    #                 param_ZO_grad = param_ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
+    #             elif type(configs.ZO_Estim.scale) is int:
+    #                 param_ZO_grad = param_ZO_grad / configs.ZO_Estim.scale
+    #             else:
+    #                 raise NotImplementedError(f'Unknown {configs.ZO_Estim.scale}')
+    #     else:
+    #         return NotImplementedError('sample method not implemented yet')
+
+    #     param_ZO_grad = param_ZO_grad.view(param_shape)
+    #     return param_ZO_grad, loss_diff
+    
     def get_single_param_ZO_gradient(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method, p_scale=False):
         param_dim = param.numel()
         param_shape = param.shape
@@ -939,11 +1062,11 @@ class ZO_Estim_MC(nn.Module):
                 # u = u / math.sqrt((self.n_sample + u.numel() - 1) / 4 / self.n_sample)
                 # pos
                 param.add_(u * sigma)
-                # if type(trainable_layer) == QuantizedMbBlock:
-                #     w_bit = trainable_layer.w_bit
-                #     param.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
+                if type(trainable_layer) == QuantizedConv2d:
+                    w_bit = trainable_layer.w_bit
+                    param.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
                 _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
-                param.sub_(u * sigma)
+                param.copy_(old_param)
 
                 # neg
                 if estimate_method == 'forward':
@@ -951,8 +1074,11 @@ class ZO_Estim_MC(nn.Module):
                     param_ZO_grad += (pos_loss - old_loss)  * u
                 elif estimate_method == 'antithetic':
                     param.sub_(u * sigma)
+                    if type(trainable_layer) == QuantizedConv2d:
+                        w_bit = trainable_layer.w_bit
+                        param.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
                     _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
-                    param.add_(u * sigma)
+                    param.copy_(old_param)
 
                     # loss_diff += (pos_loss -  neg_loss) / 2 / sigma / self.n_sample
                     # loss_diff += (pos_loss - 2*old_loss + neg_loss) / fp_sigma**2 / self.n_sample

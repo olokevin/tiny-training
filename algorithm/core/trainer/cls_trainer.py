@@ -16,7 +16,7 @@ from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
 from quantize.quantized_ops_diff import _TruncateActivationRange
 
 PARAM_GRAD_DEBUG = None
-# PARAM_GRAD_DEBUG = True
+PARAM_GRAD_DEBUG = True
 
 OUT_GRAD_DEBUG = None
 # OUT_GRAD_DEBUG = True
@@ -322,9 +322,9 @@ class ClassificationTrainer(BaseTrainer):
                                 # G_W_ratio = torch.norm(layer.weight.grad)   
                                 # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1))                           
                                 # G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight)
-                                # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                                G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
                                 # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)**2) / torch.norm(layer.weight)
-                                G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                                # G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
                                 
                                 # G_W_ratio = torch.norm(layer.weight.grad / (layer.weight + 1e-6))
                                 # G_W_ratio = torch.norm((layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / ((layer.weight + 1e-6) * layer.scale_w.view(-1,1,1,1)))
