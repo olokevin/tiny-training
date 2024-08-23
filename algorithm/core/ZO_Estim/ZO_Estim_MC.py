@@ -873,6 +873,10 @@ class ZO_Estim_MC(nn.Module):
             d = param.data.numel()
             sigma = sigma * math.sqrt(4*L/(L+d-1)) / trainable_layer.scale_w.view(-1, 1, 1, 1)
             sigma = sigma.round()
+        
+        # if type(sigma) is not int:
+        #     sigma = sigma / trainable_layer.scale_w.view(-1, 1, 1, 1)
+        #     sigma = sigma.round()
                 
         param_ZO_grad = torch.zeros_like(param, device=self.device)
         loss_diff = 0
@@ -929,17 +933,21 @@ class ZO_Estim_MC(nn.Module):
                     else:
                         raise NotImplementedError('Unknown estimate method')
         elif sample_method == 'bernoulli':
+            old_param = param.clone()
             for i in range(self.n_sample):
                 u = self._sample_unit_sphere_quantized(param.shape, sample_method, self.device) * mask
                 # u = u / math.sqrt((self.n_sample + u.numel() - 1) / 4 / self.n_sample)
                 # pos
                 param.add_(u * sigma)
+                # if type(trainable_layer) == QuantizedMbBlock:
+                #     w_bit = trainable_layer.w_bit
+                #     param.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
                 _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
                 param.sub_(u * sigma)
 
                 # neg
                 if estimate_method == 'forward':
-                    loss_diff += (pos_loss - old_loss) / fp_sigma / self.n_sample
+                    # loss_diff += (pos_loss - old_loss) / fp_sigma / self.n_sample
                     param_ZO_grad += (pos_loss - old_loss)  * u
                 elif estimate_method == 'antithetic':
                     param.sub_(u * sigma)
@@ -947,12 +955,13 @@ class ZO_Estim_MC(nn.Module):
                     param.add_(u * sigma)
 
                     # loss_diff += (pos_loss -  neg_loss) / 2 / sigma / self.n_sample
-                    loss_diff += (pos_loss - 2*old_loss + neg_loss) / fp_sigma**2 / self.n_sample
+                    # loss_diff += (pos_loss - 2*old_loss + neg_loss) / fp_sigma**2 / self.n_sample
                     param_ZO_grad += (pos_loss - neg_loss) / 2 * u
             
             if type(sigma) is int:
                 param_ZO_grad = param_ZO_grad / sigma
             else: 
+                # param_ZO_grad = param_ZO_grad / fp_sigma
                 param_ZO_grad = param_ZO_grad * torch.where(sigma != 0, 1 / sigma, sigma)
 
             param_ZO_grad = param_ZO_grad / self.n_sample

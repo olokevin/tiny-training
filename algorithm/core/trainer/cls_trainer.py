@@ -25,6 +25,14 @@ def save_grad(layer):
     def hook(grad):
         layer.out_grad = grad
     return hook
+  
+def fwd_hook_save_value(module, input, output):
+    module.in_value = input[0].detach().clone()
+    module.out_value = output.detach().clone()
+
+def bwd_hook_save_grad(module, grad_input, grad_output):
+    module.in_grad = grad_input[0].detach().clone()
+    module.out_grad = grad_output[0].detach().clone()
 
 class ClassificationTrainer(BaseTrainer):
     def validate(self):
@@ -67,7 +75,65 @@ class ClassificationTrainer(BaseTrainer):
         train_top1 = DistributedMetric('train_top1')
         
         self.optimizer.zero_grad()
+        
+        if OUT_GRAD_DEBUG:
+            for block in self.model[1]:
+                for layer in block.conv:
+                    if hasattr(layer, 'weight'): 
+                        layer.register_forward_hook(fwd_hook_save_value)
+                        layer.register_backward_hook(bwd_hook_save_grad)
 
+        ##### Layer Selection #####
+        if OUT_GRAD_DEBUG:
+            for batch_idx, (images, labels) in enumerate(self.data_loader['train']):
+                if batch_idx >= configs.run_config.grad_accumulation_steps:
+                    break
+                else:
+                    images, labels = images.cuda(), labels.cuda()
+                    self.optimizer.zero_grad() # clear the previous gradients
+                    
+                    if self.ZO_Estim is None:
+                        output = self.model(images)
+                        loss = self.criterion(output, labels)
+                        # backward and update
+                        loss.backward()
+
+                        # partial update config
+                        if configs.backward_config.enable_backward_config:
+                            from core.utils.partial_backward import apply_backward_config
+                            apply_backward_config(self.model, configs.backward_config)
+                    else:
+                        with torch.no_grad():
+                            output = self.model(images)
+                            loss = self.criterion(output, labels)
+
+                            obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
+                            self.ZO_Estim.update_obj_fn(obj_fn)
+                            self.ZO_Estim.update_param_lr(self.optimizer.param_groups[0]['lr'])
+                            self.ZO_Estim.estimate_grad(old_loss=loss)
+
+                            self.ZO_Estim.update_grad()
+                    
+                for block in self.model[1]:
+                    for layer in block.conv:
+                        if hasattr(layer, 'weight'):  
+                            ### Fisher Information
+                            
+                            batch_sz = layer.out_value.size(0)
+                            out_channel = layer.out_value.size(1)
+                            
+                            if not hasattr(layer, 'fisher'):
+                                layer.fisher = torch.zeros(out_channel, device=layer.out_value.device)
+
+                            for c in range(out_channel):
+                                for n in range(batch_sz):
+                                    layer.fisher[c] += ((torch.sum((layer.out_value[n,c,:,:] - layer.zero_y) * layer.out_grad[n,c,:,:])) ** 2) / (2 * batch_sz)
+                            
+                            # layer_dim = sum(p.numel() for name, p in layer.named_parameters())
+                            # layer.fisher += = (torch.sum(layer.out_value * layer.out_grad)) ** 2 / layer_dim
+                            
+                            print(f'{torch.sum(layer.fisher)}')
+        
         with tqdm(total=len(self.data_loader['train']),
                   desc='Train Epoch #{}'.format(epoch),
                   disable=dist.rank() > 0 or configs.ray_tune) as t:
@@ -141,45 +207,46 @@ class ClassificationTrainer(BaseTrainer):
                     
                     ##### partial BP #####
                     elif configs.ZO_Estim.fc_bp == 'partial_BP':
-                        if OUT_GRAD_DEBUG:
-                            splited_named_modules = split_named_model(self.model)
-                            # for name, block in splited_named_modules.items():
-                            #     print(name, block)
+                        # if OUT_GRAD_DEBUG:
+                        #     splited_named_modules = split_named_model(self.model)
+                        #     # for name, block in splited_named_modules.items():
+                        #     #     print(name, block)
 
-                            split_modules_list = split_model(self.model)
-                            print(split_modules_list)
+                        #     split_modules_list = split_model(self.model)
+                        #     print(split_modules_list)
 
-                            x = images
-                            activations = []
-                            for name, block in splited_named_modules.items():
-                                if type(block) == QuantizedMbBlock:
-                                    idx=0
-                                    out = block.conv[idx](x)
-                                    activations.append((out, name+'.conv.0', block.conv[0]))
-                                    for conv_layer in block.conv[1:]:
-                                        idx += 1
-                                        out = conv_layer(out)
-                                        activations.append((out, name+'.conv.'+str(idx), conv_layer))
-                                    if block.q_add is not None:
-                                        if block.residual_conv is not None:
-                                            x = block.residual_conv(x)
-                                        out = block.q_add(x, out)
-                                        # No normalization for residual block  
-                                        x = _TruncateActivationRange.apply(out, block.q_add.scale_y, block.q_add.zero_y, block.a_bit, None)
-                                    else:
-                                        x = out
-                                else:
-                                    x = block(x)
+                        #     x = images
+                        #     activations = []
+                        #     for name, block in splited_named_modules.items():
+                        #         if type(block) == QuantizedMbBlock:
+                        #             idx=0
+                        #             out = block.conv[idx](x)
+                        #             activations.append((out, name+'.conv.0', block.conv[0]))
+                        #             for conv_layer in block.conv[1:]:
+                        #                 idx += 1
+                        #                 out = conv_layer(out)
+                        #                 activations.append((out, name+'.conv.'+str(idx), conv_layer))
+                        #             if block.q_add is not None:
+                        #                 if block.residual_conv is not None:
+                        #                     x = block.residual_conv(x)
+                        #                 out = block.q_add(x, out)
+                        #                 # No normalization for residual block  
+                        #                 x = _TruncateActivationRange.apply(out, block.q_add.scale_y, block.q_add.zero_y, block.a_bit, None)
+                        #             else:
+                        #                 x = out
+                        #         else:
+                        #             x = block(x)
 
-                                activations.append((x, name, block))
+                        #         activations.append((x, name, block))
                             
-                            for (activation, name, layer) in activations:
-                                activation.register_hook(save_grad(layer))
+                        #     for (activation, name, layer) in activations:
+                        #         activation.register_hook(save_grad(layer))
                             
-                            output = x
-                        else:
-                            output = self.model(images)
-                        # confirmed. the output is the same
+                        #     output = x
+                        # else:
+                        #     output = self.model(images)
+                        ### confirmed. the output is the same
+                        output = self.model(images)
                         loss = self.criterion(output, labels)
                         # backward and update
                         loss.backward()
@@ -248,20 +315,21 @@ class ClassificationTrainer(BaseTrainer):
                     """
                         Layer selection
                     """
-                    # for block in self.model[1]:
-                    #     for layer in block.conv:
-                    #         if hasattr(layer, 'weight'):
-                    #             ZO_scale = 1
-                    #             # ZO_scale = math.sqrt(1 / layer.weight.numel())
-                    #             # ZO_scale = math.sqrt(self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() + 1))
-                    #             # ZO_scale = self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() + 1)
-                    #             # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad) / torch.norm(layer.weight)
-                    #             # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight)
-                    #             # G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1) ** 2) / torch.norm(layer.weight)
-                    #             G_W_ratio = ZO_scale * torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                    for block in self.model[1]:
+                        for layer in block.conv:
+                            if hasattr(layer, 'weight'):  
+                                ### Gradient Weight Ratio   
+                                # G_W_ratio = torch.norm(layer.weight.grad)   
+                                # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1))                           
+                                # G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight)
+                                # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                                # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)**2) / torch.norm(layer.weight)
+                                G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
                                 
-                    #             print(f'{G_W_ratio}')
-                    #             # print(G_W_ratio * ZO_scale)
+                                # G_W_ratio = torch.norm(layer.weight.grad / (layer.weight + 1e-6))
+                                # G_W_ratio = torch.norm((layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / ((layer.weight + 1e-6) * layer.scale_w.view(-1,1,1,1)))
+                                
+                                print(f'{G_W_ratio}')
                     
                     print('\nWeight Norm')
                     print('cos sim', F.cosine_similarity(FO_weight_grad.view(-1), ZO_weight_grad.view(-1), dim=0))
