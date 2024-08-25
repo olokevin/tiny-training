@@ -135,6 +135,11 @@ def main():
         if 'best_val' in checkpoint:
             logger.info('loaded best_val: %f' % checkpoint['best_val'])
     
+    block_0_list = list(model[1][0].conv)
+    block_0_list.insert(0, model[0])
+    model[1][0].conv = torch.nn.Sequential(*block_0_list)
+    model[0] = torch.nn.Identity()
+    
     model = model.cuda()
 
     # for idx in range(14):
@@ -142,6 +147,9 @@ def main():
 
     # for idx, m in enumerate(model.named_modules()):
     #     print(idx, '->', m)
+    
+    # for name, module in model.named_modules():
+    #     print(name)
     
     # for idx, (name, param) in enumerate(model.named_parameters()):
     #     print(idx, '->', name, param.shape)

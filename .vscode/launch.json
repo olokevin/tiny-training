@@ -26,7 +26,7 @@
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}/algorithm",
       "env": {
-        "CUDA_VISIBLE_DEVICES": "2",
+        "CUDA_VISIBLE_DEVICES": "0",
         "PYDEVD_WARN_SLOW_RESOLVE_TIMEOUT": "2"
       },
       "args": ["configs/corruption.yaml"],

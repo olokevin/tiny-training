@@ -73,9 +73,23 @@ def build_obj_fn(obj_fn_type, **kwargs):
     return obj_fn
 
 def build_obj_fn_classifier(data, target, model, criterion):
-    def _obj_fn():
+    def _obj_fn(return_loss_reduction='mean'):
         y = model(data)
-        return y, criterion(y, target)
+        
+        if return_loss_reduction == 'mean':
+            criterion.reduction = 'mean'
+            return y, criterion(y, target)
+        elif return_loss_reduction == 'none':
+            criterion.reduction = 'none'
+            loss = criterion(y, target)
+            criterion.reduction = 'mean'
+            return y, loss
+        elif return_loss_reduction == 'no_loss':
+            return y
+        else:
+            raise NotImplementedError(f'Unknown {return_loss_reduction}')
+          
+        # return y, criterion(y, target)
     
     return _obj_fn
 
