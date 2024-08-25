@@ -686,9 +686,11 @@ class ZO_Estim_MC(nn.Module):
         ### ZO gradient scale adjustment
         if hasattr(configs.ZO_Estim, 'scale'):
             if configs.ZO_Estim.scale == 'sqrt-dim':
-                ZO_grad = ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+                # ZO_grad = ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+                ZO_grad = ZO_grad * math.sqrt((batch_sz * self.n_sample) / (batch_sz * self.n_sample + torch.sum(mask).item()/batch_sz - 1))
             elif configs.ZO_Estim.scale == 'dim':
-                ZO_grad = ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+                # ZO_grad = ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+                ZO_grad = ZO_grad * ((batch_sz * self.n_sample) / (batch_sz * self.n_sample + torch.sum(mask).item()/batch_sz - 1))
             elif type(configs.ZO_Estim.scale) is int:
                 ZO_grad = ZO_grad / configs.ZO_Estim.scale
             else:
@@ -1391,9 +1393,9 @@ class ZO_Estim_MC(nn.Module):
             if configs.ZO_Estim.scale == 'sqrt-dim':
                 # grad_scale = math.sqrt(self.n_sample / (param.numel() - 1))
                 # grad_scale = math.sqrt(self.n_sample / (self.n_sample + param.numel() + 1))
-                grad_scale = math.sqrt(self.n_sample / (self.n_sample + dimension - 1))
+                grad_scale = math.sqrt((batch_sz * self.n_sample) / (batch_sz * self.n_sample + dimension - 1))
             elif configs.ZO_Estim.scale == 'dim':
-                grad_scale = (self.n_sample / (self.n_sample + dimension - 1))
+                grad_scale = (batch_sz * self.n_sample) / (batch_sz * self.n_sample + dimension - 1)
             elif type(configs.ZO_Estim.scale) is int:
                 grad_scale = configs.ZO_Estim.scale
             else:
