@@ -1343,17 +1343,15 @@ class ZO_Estim_MC(nn.Module):
         for fwd_hook_handle in fwd_hook_handle_list:
             fwd_hook_handle.remove()  
         
-        global_sigma = self.sigma
-        
         ### get perturbed loss
         fwd_hook_handle_list = []
         for name, module in self.model.named_modules():
             if any(keyword in name for keyword in self.trainable_layer_list):
-                if type(global_sigma) is not int:
-                    sigma = global_sigma / module.scale_y.view(-1, 1, 1, 1)
+                if type(self.sigma) is not int:
+                    sigma = self.sigma / module.scale_y.view(-1, 1, 1, 1)
                     sigma = sigma.round()
                 else:
-                    sigma = global_sigma
+                    sigma = self.sigma
                 fwd_hook_add_perturbation = self.create_fwd_hook_add_perturbation(sigma)
                 fwd_hook_handle_list.append(module.register_forward_hook(fwd_hook_add_perturbation))
 
@@ -1380,9 +1378,14 @@ class ZO_Estim_MC(nn.Module):
             for name, module in self.model.named_modules():
                 if any(keyword in name for keyword in self.trainable_layer_list):
                     if module.grad_output is None:
-                        module.grad_output = loss_diff.view(-1,1,1,1) * module.u_actv / module.sigma
+                        module.grad_output = loss_diff.view(-1,1,1,1) * module.u_actv / self.sigma
                     else:
-                        module.grad_output += loss_diff.view(-1,1,1,1) * module.u_actv / module.sigma
+                        module.grad_output += loss_diff.view(-1,1,1,1) * module.u_actv / self.sigma
+        
+        if type(self.sigma) is not int:
+            for name, module in self.model.named_modules():
+                if any(keyword in name for keyword in self.trainable_layer_list):
+                    module.grad_output = module.grad_output * module.scale_y
         
         for fwd_hook_handle in fwd_hook_handle_list:
             fwd_hook_handle.remove()      
@@ -1434,9 +1437,13 @@ class ZO_Estim_MC(nn.Module):
             n_sample = self.n_sample
             for i in range(n_sample):
                 ### Generate random perturbation with the same shape as the parameter
-                for name, param in self.model.named_parameters():
+                for name, module in self.model.named_modules():
                     if any(keyword in name for keyword in self.trainable_layer_list):
-                        u[name] = self._sample_unit_sphere_quantized(param.shape, self.sample_method, self.device)
+                        u[name+'weight'] = self._sample_unit_sphere_quantized(module.weight.shape, self.sample_method, self.device)
+                        u[name+'bias'] = self._sample_unit_sphere_quantized(module.bias.shape, self.sample_method, self.device)
+                # for name, param in self.model.named_parameters():
+                #     if any(keyword in name for keyword in self.trainable_layer_list):
+                #         u[name] = self._sample_unit_sphere_quantized(param.shape, self.sample_method, self.device)
                 
                 # if self.normalize_perturbation:
                 #     p_sigma = self.sigma / torch.linalg.vector_norm(torch.cat([splited_param.u.view(-1) for splited_param in self.splited_param_list]))
@@ -1445,27 +1452,71 @@ class ZO_Estim_MC(nn.Module):
                 
                 ### Add perturbation to the parameter
                 # pos
-                for name, param in self.model.named_parameters():
+                for name, module in self.model.named_modules():
                     if any(keyword in name for keyword in self.trainable_layer_list):
-                        param.add_(u[name] * p_sigma)
+                        if type(p_sigma) is not int:
+                            module.weight.add_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
+                            module.bias.add_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round() )
+                        else:
+                            module.weight.add_(u[name+'.weight'] * p_sigma)
+                            module.bias.add_(u[name+'.bias'] * p_sigma)
+                        
+                # for name, param in self.model.named_parameters():
+                #     if any(keyword in name for keyword in self.trainable_layer_list):
+                #         param.add_(u[name] * p_sigma)
                     
                 _, pos_loss = self.obj_fn()
 
                 ### Estimate gradient
                 if self.estimate_method == 'forward':
-                    for name, param in self.model.named_parameters():
+                    for name, module in self.model.named_modules():
                         if any(keyword in name for keyword in self.trainable_layer_list):
-                            param.sub_(u[name] * p_sigma)
-                            param.grad += (pos_loss - old_loss) / self.sigma / n_sample * u[name]
+                            if type(p_sigma) is not int:
+                                module.weight.sub_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
+                                module.bias.sub_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round())
+                            else:
+                                module.weight.sub_(u[name+'.weight'] * p_sigma)
+                                module.bias.sub_(u[name+'.bias'] * p_sigma)
+                        
+                            module.weight.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
+                            module.bias.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
+                            
+                    # for name, param in self.model.named_parameters():
+                    #     if any(keyword in name for keyword in self.trainable_layer_list):
+                    #         param.sub_(u[name] * p_sigma)
+                    #         param.grad += (pos_loss - old_loss) / self.sigma / n_sample * u[name]
                 elif self.estimate_method == 'antithetic':
-                    for name, param in self.model.named_parameters():
+                    for name, module in self.model.named_modules():
                         if any(keyword in name for keyword in self.trainable_layer_list):
-                            param.sub_(u[name] * p_sigma * 2)
+                            if type(p_sigma) is not int:
+                                module.weight.sub_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() * 2 )
+                                module.bias.sub_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round() * 2)
+                            else:
+                                module.weight.sub_(u[name+'.weight'] * p_sigma * 2)
+                                module.bias.sub_(u[name+'.bias'] * p_sigma * 2)
+                                
+                    # for name, param in self.model.named_parameters():
+                    #     if any(keyword in name for keyword in self.trainable_layer_list):
+                    #         param.sub_(u[name] * p_sigma * 2)
+                    
                     _, neg_loss = self.obj_fn()
-                    for name, param in self.model.named_parameters():
+                    
+                    for name, module in self.model.named_modules():
                         if any(keyword in name for keyword in self.trainable_layer_list):
-                            param.add_(u[name] * p_sigma)
-                            param.grad += (pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name]
+                            if type(p_sigma) is not int:
+                                module.weight.add_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
+                                module.bias.add_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round())
+                            else:
+                                module.weight.add_(u[name+'.weight'] * p_sigma)
+                                module.bias.add_(u[name+'.bias'] * p_sigma)
+                        
+                            module.weight.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
+                            module.bias.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
+                    
+                    # for name, param in self.model.named_parameters():
+                    #     if any(keyword in name for keyword in self.trainable_layer_list):
+                    #         param.add_(u[name] * p_sigma)
+                    #         param.grad += (pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name]
                 
             if hasattr(configs.ZO_Estim, 'scale'):
                 for name, param in self.model.named_parameters():

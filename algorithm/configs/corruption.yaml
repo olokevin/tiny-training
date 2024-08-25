@@ -221,10 +221,10 @@ ZO_Estim:
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 100
+  n_sample: 1000
   signSGD: False
 
-  scale: sqrt-dim
+  # scale: sqrt-dim
   # scale: dim
   # scale: 100
 
@@ -262,15 +262,15 @@ ZO_Estim:
   # sample_method: coord_basis
 
   ############################## Layerwise Activation Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: activation
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: activation
 
-  sigma: 0.1
+  # sigma: 0.1
 
-  perturb_before_round: 0
+  # perturb_before_round: 0
 
-  sync_batch_perturb: 0
-  # sync_batch_perturb: 1
+  # sync_batch_perturb: 0
+  # # sync_batch_perturb: 1
 
   ############################## Layerwise Param Perturbation ##############################
   # obj_fn_type: classifier_layerwise
@@ -292,15 +292,15 @@ ZO_Estim:
   # obj_fn_type: classifier
   # perturb_method: all_activation
 
-  # sigma: 1
+  # sigma: 0.1
   
   ############################## Modelwise Param Perturbation ##############################
-  # obj_fn_type: classifier
-  # perturb_method: all_param
+  obj_fn_type: classifier
+  perturb_method: all_param
 
-  # sigma: 1
+  sigma: 0.1
 
-  # param_update_method: None
+  param_update_method: None
 
   ############################## Weight Perturbation ##############################
   # obj_fn_type: classifier
