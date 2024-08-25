@@ -130,12 +130,10 @@ backward_config:
   # freeze_fc: 1
   # only_update_selected_bias: 1
 
-  ##### FO-RGN selected layers
+  ##### selected layers
   # enable_backward_config: 1  
   # n_bias_update: 42
-  # manual_weight_idx: 6-9-12-15-18-21-33-36
-  # weight_update_ratio: 1-1-1-1-1-1-1-1
-  # manual_weight_idx: 6-9-12-15-18-21
+  # manual_weight_idx: 0-3-6-9-12-15
   # weight_update_ratio: 1-1-1-1-1-1
 
   ##### ZO-RGN selected 5 layers
@@ -264,31 +262,31 @@ ZO_Estim:
   # sample_method: coord_basis
 
   ############################## Layerwise Activation Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: activation
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: activation
 
-  sigma: 1
+  # sigma: 0.1
 
-  perturb_before_round: 0
+  # perturb_before_round: 0
 
-  sync_batch_perturb: 0
-  # sync_batch_perturb: 1
+  # sync_batch_perturb: 0
+  # # sync_batch_perturb: 1
 
   ############################## Layerwise Param Perturbation ##############################
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: param
+  obj_fn_type: classifier_layerwise
+  perturb_method: param
 
-  # sigma: {
-  #   'weight': 0.001,
-  #   'bias': 100,
-  # }
+  sigma: {
+    'weight': 1,
+    'bias': 100,
+  }
 
-  # # sigma: 0.1
+  # sigma: 0.1
 
-  # param_update_method: None
-  # # param_update_method: layerwise
-  # # param_update_method: blockwise
-  # # param_update_method: modelwise
+  param_update_method: None
+  # param_update_method: layerwise
+  # param_update_method: blockwise
+  # param_update_method: modelwise
 
   ############################## Modelwise Activation Perturbation ##############################
   # obj_fn_type: classifier

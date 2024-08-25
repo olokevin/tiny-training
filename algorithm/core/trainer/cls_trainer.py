@@ -16,7 +16,7 @@ from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
 from quantize.quantized_ops_diff import _TruncateActivationRange
 
 PARAM_GRAD_DEBUG = None
-PARAM_GRAD_DEBUG = True
+# PARAM_GRAD_DEBUG = True
 
 OUT_GRAD_DEBUG = None
 # OUT_GRAD_DEBUG = True
@@ -136,7 +136,7 @@ class ClassificationTrainer(BaseTrainer):
             print('layer MSE')
             for layer in self.model.modules():
                 if isinstance(layer, QuantizedConv2d):
-                    print(f'{torch.linalg.norm(layer.ZO_grad.view(-1) - layer.FO_grad.view(-1))}')
+                    print(f'{torch.linalg.norm(layer.ZO_grad.view(-1) - layer.FO_grad.view(-1)) ** 2}')
             
             FO_grad_vec = torch.cat(FO_grad_list)
             ZO_grad_vec = torch.cat(ZO_grad_list)

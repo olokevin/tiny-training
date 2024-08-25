@@ -517,12 +517,12 @@ class ZO_Estim_MC(nn.Module):
         if configs.train_config.layerwise_update and self.estimate_method == 'forward':
             _, old_loss = self.obj_fn(starting_idx=splited_block.idx, input=block_in, return_loss_reduction='none')
 
-        assert type(self.sigma) is int
-        # if type(self.sigma) is not int:
-        #     sigma = self.sigma / splited_block.block.conv[conv_idx].scale_y.view(-1, 1, 1, 1)
-        #     sigma = sigma.round()
-        # else:
-        #     sigma = self.sigma
+        # assert type(self.sigma) is int
+        if type(self.sigma) is not int:
+            sigma = self.sigma / splited_block.block.conv[conv_idx].scale_y.view(-1, 1, 1, 1)
+            sigma = sigma.round()
+        else:
+            sigma = self.sigma
 
         if configs.train_config.ZO_grad_prune_ratio is not None:
             ZO_grad_prune_ratio = configs.train_config.ZO_grad_prune_ratio
@@ -637,7 +637,7 @@ class ZO_Estim_MC(nn.Module):
                 else:
                     u = mask * self._sample_unit_sphere_quantized(post_actv.shape, self.sample_method, self.device)
 
-                post_actv = post_actv + u * self.sigma
+                post_actv = post_actv + u * sigma
 
                 if splited_block.type == QuantizedMbBlock:
                     a_bit = splited_block.block.conv[conv_idx].a_bit
@@ -656,7 +656,7 @@ class ZO_Estim_MC(nn.Module):
                     ZO_grad += (pos_loss - old_loss).view(-1,1) / self.sigma * u
 
                 elif self.estimate_method == 'antithetic':
-                    post_actv = post_actv - u * self.sigma
+                    post_actv = post_actv - u * sigma
 
                     if splited_block.type == QuantizedMbBlock:
                         a_bit = splited_block.block.conv[conv_idx].a_bit
@@ -679,10 +679,9 @@ class ZO_Estim_MC(nn.Module):
         else:
             raise NotImplementedError('Unknown sample method')
         
-        # if configs.train_config.ZO_grad_prune_ratio is not None:
-        #     ZO_grad = ZO_grad * 4 / int((1.0-ZO_grad_prune_ratio) * (post_actv.numel() / batch_sz))
-        # else:
-        #     ZO_grad = ZO_grad / (post_actv.numel() / batch_sz)
+        if type(self.sigma) is not int:
+            ### scale to theta_bar's gradient
+            ZO_grad = ZO_grad * splited_block.block.conv[conv_idx].scale_y
         
         ### ZO gradient scale adjustment
         if hasattr(configs.ZO_Estim, 'scale'):
