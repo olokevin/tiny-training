@@ -1439,8 +1439,8 @@ class ZO_Estim_MC(nn.Module):
                 ### Generate random perturbation with the same shape as the parameter
                 for name, module in self.model.named_modules():
                     if any(keyword in name for keyword in self.trainable_layer_list):
-                        u[name+'weight'] = self._sample_unit_sphere_quantized(module.weight.shape, self.sample_method, self.device)
-                        u[name+'bias'] = self._sample_unit_sphere_quantized(module.bias.shape, self.sample_method, self.device)
+                        u[name+'.weight'] = self._sample_unit_sphere_quantized(module.weight.shape, self.sample_method, self.device)
+                        u[name+'.bias'] = self._sample_unit_sphere_quantized(module.bias.shape, self.sample_method, self.device)
                 # for name, param in self.model.named_parameters():
                 #     if any(keyword in name for keyword in self.trainable_layer_list):
                 #         u[name] = self._sample_unit_sphere_quantized(param.shape, self.sample_method, self.device)
@@ -1474,12 +1474,15 @@ class ZO_Estim_MC(nn.Module):
                             if type(p_sigma) is not int:
                                 module.weight.sub_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
                                 module.bias.sub_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round())
+                                
+                                module.weight.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
+                                module.bias.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
                             else:
                                 module.weight.sub_(u[name+'.weight'] * p_sigma)
                                 module.bias.sub_(u[name+'.bias'] * p_sigma)
-                        
-                            module.weight.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
-                            module.bias.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
+                                
+                                module.weight.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.weight'])
+                                module.bias.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.bias'])
                             
                     # for name, param in self.model.named_parameters():
                     #     if any(keyword in name for keyword in self.trainable_layer_list):
@@ -1506,13 +1509,15 @@ class ZO_Estim_MC(nn.Module):
                             if type(p_sigma) is not int:
                                 module.weight.add_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
                                 module.bias.add_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round())
+                                
+                                module.weight.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
+                                module.bias.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
                             else:
                                 module.weight.add_(u[name+'.weight'] * p_sigma)
                                 module.bias.add_(u[name+'.bias'] * p_sigma)
-                        
-                            module.weight.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
-                            module.bias.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
-                    
+                                
+                                module.weight.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.weight'])
+                                module.bias.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.bias'])
                     # for name, param in self.model.named_parameters():
                     #     if any(keyword in name for keyword in self.trainable_layer_list):
                     #         param.add_(u[name] * p_sigma)
