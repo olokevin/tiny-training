@@ -100,7 +100,7 @@ class ZO_Estim_MC(nn.Module):
                         if n_block <= 0:
                             break
         else:
-            raise ValueError('Not supported trainable_layer_list')
+            raise ValueError(f'Not supported trainable_layer_list {trainable_layer_list}')
         
         
         self.trainable_splited_block_list = []

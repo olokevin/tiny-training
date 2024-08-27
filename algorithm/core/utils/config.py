@@ -3,6 +3,7 @@ import yaml
 import argparse
 from easydict import EasyDict
 from typing import Union
+import ast
 
 configs = EasyDict()
 
@@ -92,6 +93,14 @@ def parse_unknown_args(unknown):
 
 def update_config_from_unknown_args(unknown):
     parsed = parse_unknown_args(unknown)
+    print(' * Getting extra args', parsed)
+    
+    for k, v in parsed.items():
+        try:
+            parsed[k] = ast.literal_eval(v)
+        except:
+            pass
+
     print(' * Getting extra args', parsed)
     update_config_from_args(parsed)
 

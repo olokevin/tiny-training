@@ -63,6 +63,8 @@ run_config:
 
   # iteration_decay: 0
 
+  # eval_per_epochs: 1
+
   # optimizer
   # optimizer_name: sgd
   # optimizer_name: sgd_nomom

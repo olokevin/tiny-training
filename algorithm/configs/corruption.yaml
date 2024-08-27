@@ -42,20 +42,22 @@ data_provider:
   # root: '~/dataset/pets'
   # num_classes: 37
 
-  base_batch_size: 1
+  # base_batch_size: 1
   # base_batch_size: 128
-  # base_batch_size: 100
+  base_batch_size: 100
 
 run_config:
+  warmup_epochs: 0
+  n_epochs: 1
   # warmup_epochs: 5
-  n_epochs: 50
+  # n_epochs: 50
   # n_epochs: 200
   # n_epochs: 2000
   # n_epochs: 50000
 
   ### no gradint accumulation
-  # bs256_lr: 0.1
-  bs256_lr: 0.01
+  bs256_lr: 0.1
+  # bs256_lr: 0.01
   # bs256_lr: 0.001
   # bs256_lr: 0.0001
 
@@ -64,6 +66,8 @@ run_config:
   # grad_accumulation_steps: 1
 
   iteration_decay: 0
+
+  eval_per_epochs: 1
 
   # optimizer
   # optimizer_name: sgd
@@ -225,7 +229,7 @@ ZO_Estim:
   signSGD: False
 
   # scale: sqrt-dim
-  scale: dim
+  # scale: dim
   # scale: 100
 
   # trainable_param_list: all
@@ -262,31 +266,31 @@ ZO_Estim:
   # sample_method: coord_basis
 
   ############################## Layerwise Activation Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: activation
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: activation
 
-  sigma: 1
+  # sigma: 1
 
-  perturb_before_round: 0
+  # perturb_before_round: 0
 
-  sync_batch_perturb: 0
-  # sync_batch_perturb: 1
+  # sync_batch_perturb: 0
+  # # sync_batch_perturb: 1
 
   ############################## Layerwise Param Perturbation ##############################
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: param
+  obj_fn_type: classifier_layerwise
+  perturb_method: param
 
-  # sigma: {
-  #   'weight': 1,
-  #   'bias': 100,
-  # }
+  sigma: {
+    'weight': 1,
+    'bias': 100,
+  }
 
-  # # sigma: 0.1
+  # sigma: 0.1
 
-  # param_update_method: None
-  # # param_update_method: layerwise
-  # # param_update_method: blockwise
-  # # param_update_method: modelwise
+  param_update_method: None
+  # param_update_method: layerwise
+  # param_update_method: blockwise
+  # param_update_method: modelwise
 
   ############################## Modelwise Activation Perturbation ##############################
   # obj_fn_type: classifier
