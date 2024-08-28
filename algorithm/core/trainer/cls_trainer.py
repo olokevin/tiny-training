@@ -16,7 +16,7 @@ from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
 from quantize.quantized_ops_diff import _TruncateActivationRange
 
 PARAM_GRAD_DEBUG = None
-# PARAM_GRAD_DEBUG = True
+PARAM_GRAD_DEBUG = True
 
 OUT_GRAD_DEBUG = None
 # OUT_GRAD_DEBUG = True
@@ -109,45 +109,45 @@ class ClassificationTrainer(BaseTrainer):
                     FO_grad_list.append(layer.FO_grad.view(-1))
             
             ### ZO gradient
-            # self.optimizer.zero_grad()
-            # with torch.no_grad():
-            #     output = self.model(images)
-            #     loss = self.criterion(output, labels)
-
-            #     obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
-            #     self.ZO_Estim.update_obj_fn(obj_fn)
-            #     self.ZO_Estim.update_param_lr(self.optimizer.param_groups[0]['lr'])
-            #     self.ZO_Estim.estimate_grad(old_loss=loss)
-
-            #     self.ZO_Estim.update_grad()
-            
-            # for layer in self.model.modules():
-            #     if isinstance(layer, QuantizedConv2d):
-            #         layer.ZO_grad = layer.weight.grad.data
-            
-            ### ZO gradient independnet perturbation
             self.optimizer.zero_grad()
             with torch.no_grad():
-                batch_sz = images.size(0)
-                for i in range(batch_sz):
-                    self.optimizer.zero_grad()
-                    images_i = images[i].unsqueeze(0)
-                    labels_i = labels[i].unsqueeze(0)
-                    output = self.model(images_i)
-                    loss = self.criterion(output, labels_i)
+                output = self.model(images)
+                loss = self.criterion(output, labels)
 
-                    obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images_i, target=labels_i, model=self.model, criterion=self.criterion)
-                    self.ZO_Estim.update_obj_fn(obj_fn)
-                    self.ZO_Estim.update_param_lr(self.optimizer.param_groups[0]['lr'])
-                    self.ZO_Estim.estimate_grad(old_loss=loss)
+                obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=self.model, criterion=self.criterion)
+                self.ZO_Estim.update_obj_fn(obj_fn)
+                self.ZO_Estim.update_param_lr(self.optimizer.param_groups[0]['lr'])
+                self.ZO_Estim.estimate_grad(old_loss=loss)
 
-                    self.ZO_Estim.update_grad()
+                self.ZO_Estim.update_grad()
+            
+            for layer in self.model.modules():
+                if isinstance(layer, QuantizedConv2d):
+                    layer.ZO_grad = layer.weight.grad.data
+            
+            ### ZO gradient independnet perturbation
+            # self.optimizer.zero_grad()
+            # with torch.no_grad():
+            #     batch_sz = images.size(0)
+            #     for i in range(batch_sz):
+            #         self.optimizer.zero_grad()
+            #         images_i = images[i].unsqueeze(0)
+            #         labels_i = labels[i].unsqueeze(0)
+            #         output = self.model(images_i)
+            #         loss = self.criterion(output, labels_i)
+
+            #         obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images_i, target=labels_i, model=self.model, criterion=self.criterion)
+            #         self.ZO_Estim.update_obj_fn(obj_fn)
+            #         self.ZO_Estim.update_param_lr(self.optimizer.param_groups[0]['lr'])
+            #         self.ZO_Estim.estimate_grad(old_loss=loss)
+
+            #         self.ZO_Estim.update_grad()
                     
-                    for layer in self.model.modules():
-                        if isinstance(layer, QuantizedConv2d):
-                            if not hasattr(layer, 'ZO_grad'):
-                                layer.ZO_grad = torch.zeros_like(layer.weight.grad.data)
-                            layer.ZO_grad += layer.weight.grad.data / batch_sz
+            #         for layer in self.model.modules():
+            #             if isinstance(layer, QuantizedConv2d):
+            #                 if not hasattr(layer, 'ZO_grad'):
+            #                     layer.ZO_grad = torch.zeros_like(layer.weight.grad.data)
+            #                 layer.ZO_grad += layer.weight.grad.data / batch_sz
             
             print('layer cos sim')
             for layer in self.model.modules():

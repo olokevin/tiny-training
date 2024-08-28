@@ -121,6 +121,33 @@ class ZO_Estim_MC(nn.Module):
 
         # self.ZO_dimension = sum(p.numel() for p in filter(lambda x: x.requires_grad, self.model.parameters()))
         self.ZO_dimension = sum(p.numel() for name, p in self.model.named_parameters() if name in self.trainable_param_list)
+        
+        
+        self.ZO_dimension = 0
+        if 'param' in self.perturb_method:
+            for name, param in self.model.named_parameters():
+                if any(keyword in name for keyword in self.trainable_layer_list):
+                    self.ZO_dimension += param.numel()
+                    param.grad = torch.zeros_like(param)
+
+        elif 'activation' in self.perturb_method:
+            ### get activation dimension
+            fwd_hook_handle_list = []
+            for name, module in self.model.named_modules():
+                if any(keyword in name for keyword in self.trainable_layer_list):
+                    fwd_hook_get_out_dimension = self.create_fwd_hook_get_out_dimension()
+                    fwd_hook_handle_list.append(module.register_forward_hook(fwd_hook_get_out_dimension))
+                    
+            _, old_loss = self.obj_fn(return_loss_reduction='none')
+            
+            for name, module in self.model.named_modules():
+                if any(keyword in name for keyword in self.trainable_layer_list):
+                    self.ZO_dimension += module.out_dimension
+                    
+            for fwd_hook_handle in fwd_hook_handle_list:
+                fwd_hook_handle.remove()  
+        
+        self.ZO_dimension = int(self.ZO_dimension)
         print('ZO_dimension=', self.ZO_dimension)
 
         if 'block' in mask_method:
@@ -631,7 +658,16 @@ class ZO_Estim_MC(nn.Module):
         elif self.sample_method == 'bernoulli':         
             org_post_actv = post_actv.int()
 
-            for i in range(self.n_sample):
+            if hasattr(configs.ZO_Estim, 'n_sample_distri'):
+                n_sample_distri = configs.ZO_Estim.n_sample_distri
+                if n_sample_distri == 'uniform':
+                    n_sample = self.n_sample / 42
+                elif n_sample_distri == 'dim':
+                    n_sample = int((self.n_sample * splited_block.block.conv[conv_idx].out_dimension / self.ZO_dimension))
+            else:
+                n_sample = self.n_sample
+                  
+            for i in range(n_sample):
                 if configs.ZO_Estim.sync_batch_perturb:
                     u = mask * torch.tile(self._sample_unit_sphere_quantized(post_actv.shape[-1], self.sample_method, self.device).unsqueeze(0), (batch_sz, 1))
                 else:
@@ -674,7 +710,7 @@ class ZO_Estim_MC(nn.Module):
 
                     post_actv = org_post_actv
               
-            ZO_grad = (ZO_grad / self.n_sample / batch_sz).view(post_actv_shape)
+            ZO_grad = (ZO_grad / n_sample / batch_sz).view(post_actv_shape)
             mask = mask.view(post_actv_shape)
         else:
             raise NotImplementedError('Unknown sample method')
@@ -686,11 +722,11 @@ class ZO_Estim_MC(nn.Module):
         ### ZO gradient scale adjustment
         if hasattr(configs.ZO_Estim, 'scale'):
             if configs.ZO_Estim.scale == 'sqrt-dim':
-                # ZO_grad = ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
-                ZO_grad = ZO_grad * math.sqrt((batch_sz * self.n_sample) / (batch_sz * self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+                # ZO_grad = ZO_grad * math.sqrt(n_sample / (n_sample + torch.sum(mask).item()/batch_sz - 1))
+                ZO_grad = ZO_grad * math.sqrt((batch_sz * n_sample) / (batch_sz * n_sample + torch.sum(mask).item()/batch_sz - 1))
             elif configs.ZO_Estim.scale == 'dim':
-                # ZO_grad = ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
-                ZO_grad = ZO_grad * ((batch_sz * self.n_sample) / (batch_sz * self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+                # ZO_grad = ZO_grad * (n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
+                ZO_grad = ZO_grad * ((batch_sz * n_sample) / (batch_sz * n_sample + torch.sum(mask).item()/batch_sz - 1))
             elif type(configs.ZO_Estim.scale) is int:
                 ZO_grad = ZO_grad / configs.ZO_Estim.scale
             else:
@@ -955,7 +991,15 @@ class ZO_Estim_MC(nn.Module):
                         raise NotImplementedError('Unknown estimate method')
         elif sample_method == 'bernoulli':
             old_param = param.clone()
-            for i in range(self.n_sample):
+            if hasattr(configs.ZO_Estim, 'n_sample_distri'):
+                n_sample_distri = configs.ZO_Estim.n_sample_distri
+                if n_sample_distri == 'uniform':
+                    n_sample = self.n_sample / 42
+                elif n_sample_distri == 'dim':
+                    n_sample = int(self.n_sample * param_dim / self.ZO_dimension)
+            else:
+                n_sample = self.n_sample
+            for i in range(n_sample):
                 u = self._sample_unit_sphere_quantized(param.shape, sample_method, self.device) * mask
                 # u = u / math.sqrt((self.n_sample + u.numel() - 1) / 4 / self.n_sample)
                 # pos
@@ -995,15 +1039,15 @@ class ZO_Estim_MC(nn.Module):
                 elif param.dim() == 1:
                     param_ZO_grad = param_ZO_grad * trainable_layer.scale_x * trainable_layer.scale_w
 
-            param_ZO_grad = param_ZO_grad / self.n_sample
+            param_ZO_grad = param_ZO_grad / n_sample
             
             if hasattr(configs.ZO_Estim, 'scale'):
                 if configs.ZO_Estim.scale == 'sqrt-dim':
-                    # param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (param.numel() - 1))
-                    # param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (self.n_sample + param.numel() + 1))
-                    param_ZO_grad = param_ZO_grad * math.sqrt(self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
+                    # param_ZO_grad = param_ZO_grad * math.sqrt(n_sample / (param.numel() - 1))
+                    # param_ZO_grad = param_ZO_grad * math.sqrt(n_sample / (self.n_sample + param.numel() + 1))
+                    param_ZO_grad = param_ZO_grad * math.sqrt(n_sample / (n_sample + torch.sum(mask).item() - 1))
                 elif configs.ZO_Estim.scale == 'dim':
-                    param_ZO_grad = param_ZO_grad * (self.n_sample / (self.n_sample + torch.sum(mask).item() - 1))
+                    param_ZO_grad = param_ZO_grad * (n_sample / (n_sample + torch.sum(mask).item() - 1))
                 elif type(configs.ZO_Estim.scale) is int:
                     param_ZO_grad = param_ZO_grad / configs.ZO_Estim.scale
                 else:
@@ -1287,6 +1331,12 @@ class ZO_Estim_MC(nn.Module):
     #                     pass
         
     #     return None
+    def create_fwd_hook_get_out_dimension(self):
+        def fwd_hook(module, input, output):
+            # input is a tuple
+            module.out_dimension = output.numel() / output.shape[0]
+        return fwd_hook
+    
     def create_fwd_hook_save_input(self):
         def fwd_hook(module, input, output):
             # input is a tuple
@@ -1325,7 +1375,7 @@ class ZO_Estim_MC(nn.Module):
     #     return fwd_hook
       
     def get_all_actv_ZO_gradient(self):
-        ### get activation dimension
+        ### save clean input
         fwd_hook_handle_list = []
         for name, module in self.model.named_modules():
             if any(keyword in name for keyword in self.trainable_layer_list):
@@ -1335,13 +1385,11 @@ class ZO_Estim_MC(nn.Module):
         _, old_loss = self.obj_fn(return_loss_reduction='none')
         
         batch_sz = len(old_loss)
-        dimension = 0
-        for name, module in self.model.named_modules():
-            if any(keyword in name for keyword in self.trainable_layer_list):
-                dimension += module.out_dimension
                 
         for fwd_hook_handle in fwd_hook_handle_list:
             fwd_hook_handle.remove()  
+        
+        dimension = self.ZO_dimension
         
         ### get perturbed loss
         fwd_hook_handle_list = []
@@ -1424,11 +1472,11 @@ class ZO_Estim_MC(nn.Module):
                 
     
     def get_all_param_ZO_gradient(self, old_loss):
-        dimension = 0
-        for name, param in self.model.named_parameters():
-            if any(keyword in name for keyword in self.trainable_layer_list):
-                dimension += param.numel()
-                param.grad = torch.zeros_like(param)
+        dimension = self.ZO_dimension
+        # for name, param in self.model.named_parameters():
+        #     if any(keyword in name for keyword in self.trainable_layer_list):
+        #         dimension += param.numel()
+        #         param.grad = torch.zeros_like(param)
         
         if self.sample_method == 'coord_basis':
             raise NotImplementedError

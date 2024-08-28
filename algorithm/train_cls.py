@@ -16,7 +16,7 @@ from core.utils.config import configs, load_config_from_file, update_config_from
 from core.utils.logging import logger
 from core.dataset import build_dataset
 from core.optimizer import build_optimizer
-from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim
+from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn
 from core.trainer.cls_trainer import ClassificationTrainer
 from core.builder.lr_scheduler import build_lr_scheduler
 
@@ -167,7 +167,10 @@ def main():
     lr_scheduler = build_lr_scheduler(optimizer, len(data_loader['train']))
 
     if configs.ZO_Estim.en is True:
-        obj_fn = None
+        images, labels = next(iter(data_loader['val']))
+        images, labels = images.cuda(), labels.cuda()
+        obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
+        # obj_fn = None
         ZO_Estim = build_ZO_Estim(configs.ZO_Estim, model=model, obj_fn=obj_fn)
     else:
         ZO_Estim = None

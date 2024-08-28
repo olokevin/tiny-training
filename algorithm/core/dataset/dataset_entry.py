@@ -190,6 +190,26 @@ def build_dataset():
         raise NotImplementedError(configs.data_provider.dataset)
   
     if configs.data_provider.num_samples_per_class is not None:
+        # trainset = dataset['train']
+        # datas = [[] for _ in range(num_classes)]
+        # labels = [[] for _ in range(num_classes)]
+        # mark = dict()
+        # dataloader_iter = iter(dataloader)
+        # while True:
+        #     inputs, targets = next(dataloader_iter)
+        #     for idx in range(inputs.shape[0]):
+        #         x, y = inputs[idx:idx+1], targets[idx:idx+1]
+        #         category = y.item()
+        #         if len(datas[category]) == samples_per_class:
+        #             mark[category] = True
+        #             continue
+        #         datas[category].append(x)
+        #         labels[category].append(y)
+        #     if len(mark) == num_classes:
+        #         break
+
+        # X, y = torch.cat([torch.cat(_, 0) for _ in datas]), torch.cat([torch.cat(_) for _ in labels]).view(-1)
+      
         trainset = dataset['train']
         indices = []
         for i in range(configs.data_provider.num_classes):  

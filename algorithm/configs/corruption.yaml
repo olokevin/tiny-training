@@ -131,13 +131,19 @@ backward_config:
   # n_weight_update: 0
 
   ########## Corruption datasets ##########
-  # freeze_fc: 1
-  # only_update_selected_bias: 1
+  freeze_fc: 1
+  only_update_selected_bias: 1
 
   ##### selected layers
   # enable_backward_config: 1  
   # n_bias_update: 42
-  # manual_weight_idx: 0-3-6-9-12-15
+  # manual_weight_idx: 21-30-36
+  # weight_update_ratio: 1-1-1
+
+  ##### selected layers
+  # enable_backward_config: 1  
+  # n_bias_update: 42
+  # manual_weight_idx: 9-15-21-30-33-36
   # weight_update_ratio: 1-1-1-1-1-1
 
   ##### ZO-RGN selected 5 layers
@@ -225,11 +231,14 @@ ZO_Estim:
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 100
+  n_sample: 4200
   signSGD: False
 
+  # n_sample_distri: uniform
+  # n_sample_distri: dim
+
   # scale: sqrt-dim
-  # scale: dim
+  scale: dim
   # scale: 100
 
   # trainable_param_list: all
