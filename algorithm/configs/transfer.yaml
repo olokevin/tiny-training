@@ -50,22 +50,22 @@ data_provider:
   base_batch_size: 100
 
 run_config:
-  warmup_epochs: 0
-  n_epochs: 1
-  # warmup_epochs: 5
-  # n_epochs: 100
+  # warmup_epochs: 0
+  # n_epochs: 1
+  warmup_epochs: 5
+  n_epochs: 100
   # n_epochs: 2000
 
   ### no gradint accumulation
-  bs256_lr: 0.1
-  # bs256_lr: 0.01
+  # bs256_lr: 0.1
+  bs256_lr: 0.01
 
   ### gradient accumulation setting. should use the corresponding lr of batch size 1 
   # grad_accumulation_steps: 128
 
-  iteration_decay: 0
+  # iteration_decay: 0
 
-  eval_per_epochs: 1
+  # eval_per_epochs: 1
 
   # optimizer
   # optimizer_name: sgd
@@ -78,8 +78,8 @@ run_config:
   # optimizer_name: sgd_scale
   # optimizer_name: sgd_scale_nomom
 
-  # optimizer_name: sgd_scale_int
-  optimizer_name: sgd_scale_int_nomom
+  optimizer_name: sgd_scale_int
+  # optimizer_name: sgd_scale_int_nomom
 
 net_config:
   net_name: mcunet-5fps
@@ -135,8 +135,8 @@ backward_config:
   # n_weight_update: 0
 
   ########## Corruption datasets ##########
-  freeze_fc: 1
-  only_update_selected_bias: 1
+  # freeze_fc: 1
+  # only_update_selected_bias: 1
 
   ##### first 2 blocks
   # enable_backward_config: 1  
@@ -207,7 +207,7 @@ train_config:
   }
   
 ZO_Estim:
-  en: True
+  # en: True
 
   fc_bp: False
   # fc_bp: cls_only

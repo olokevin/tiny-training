@@ -77,8 +77,34 @@ class ZO_Estim_MC(nn.Module):
                 if type(splited_block.block) is QuantizedMbBlock:
                     for conv_idx in range(len(splited_block.block.conv)):
                         self.trainable_layer_list.append(f'{splited_block.name}.conv.{conv_idx}')
-        elif 'last' in trainable_layer_list:
-            n_block = int(trainable_layer_list.split('-')[1])
+        elif trainable_layer_list == 'pw1-all':
+            for splited_block in self.splited_block_list:
+                if type(splited_block.block) is QuantizedMbBlock:
+                    self.trainable_layer_list.append(f'{splited_block.name}.conv.0')
+        elif 'pw1-first' in trainable_layer_list:
+            n_block = int(trainable_layer_list.split('-')[-1])
+            for splited_block in self.splited_block_list:
+                if type(splited_block.block) is QuantizedMbBlock:
+                    if n_block <= 0:
+                        break
+                    else:
+                        self.trainable_layer_list.append(f'{splited_block.name}.conv.0')
+                        n_block -= 1
+                        if n_block <= 0:
+                            break
+        elif 'pw1-last' in trainable_layer_list:
+            n_block = int(trainable_layer_list.split('-')[-1])
+            for splited_block in self.splited_block_list[::-1]:
+                if type(splited_block.block) is QuantizedMbBlock:
+                    if n_block <= 0:
+                        break
+                    else:
+                        self.trainable_layer_list.append(f'{splited_block.name}.conv.0')
+                        n_block -= 1
+                        if n_block <= 0:
+                            break     
+        elif 'layer-last' in trainable_layer_list:
+            n_block = int(trainable_layer_list.split('-')[-1])
             for splited_block in self.splited_block_list[::-1]:
                 if type(splited_block.block) is QuantizedMbBlock:
                     if n_block <= 0:
@@ -88,8 +114,8 @@ class ZO_Estim_MC(nn.Module):
                         n_block -= 1
                         if n_block <= 0:
                             break
-        elif 'first' in trainable_layer_list:
-            n_block = int(trainable_layer_list.split('-')[1])
+        elif 'layer-first' in trainable_layer_list:
+            n_block = int(trainable_layer_list.split('-')[-1])
             for splited_block in self.splited_block_list:
                 if type(splited_block.block) is QuantizedMbBlock:
                     if n_block <= 0:
@@ -635,7 +661,7 @@ class ZO_Estim_MC(nn.Module):
                 n_sample = self.n_sample
                   
             for i in range(n_sample):
-                if configs.ZO_Estim.sync_batch_perturb:
+                if hasattr(configs.ZO_Estim, 'sync_batch_perturb') and configs.ZO_Estim.sync_batch_perturb:
                     u = mask * torch.tile(self._sample_unit_sphere_quantized(post_actv.shape[-1], self.sample_method, self.device).unsqueeze(0), (batch_sz, 1))
                 else:
                     u = mask * self._sample_unit_sphere_quantized(post_actv.shape, self.sample_method, self.device)
@@ -1204,6 +1230,9 @@ class ZO_Estim_MC(nn.Module):
                     if splited_block.type == QuantizedMbBlock:
                         ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, old_loss_vec, local_backward_args=True)
                         grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad, binary_mask=mask.bool())
+                        
+                        grad_w = grad_w / 10
+                        grad_bias = grad_bias / 10
                         
                         if configs.train_config.layerwise_update is None:
                             splited_block.block.conv[conv_idx].weight.grad = grad_w
