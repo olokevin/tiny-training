@@ -449,28 +449,12 @@ class ZO_Estim_MC(nn.Module):
                         layer_input = splited_block.block.conv[:idx](pre_activ)
                         grad_x, grad_w, grad_bias = splited_block.block.conv[idx].local_backward(input=layer_input, grad_output=grad_x, binary_mask=splited_block.block.conv[idx].binary_mask)
                         
-                        if DEBUG:
-                            FO_weight_grad = splited_block.block.conv[idx].weight.grad
-                            FO_bias_grad = splited_block.block.conv[idx].bias.grad
-
-                            print(f'\n {splited_block.name}.conv[{idx}]')
-                            print('Weight')
-                            print('weight cos sim', F.cosine_similarity(FO_weight_grad.view(-1), grad_w.view(-1), dim=0))
-                            print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
-                            print('ZO_weight_grad norm:', torch.linalg.norm(grad_w))
-                            print('ZO/FO: ', torch.linalg.norm(grad_w)/torch.linalg.norm(FO_weight_grad))
-
-                            print('Bias')
-                            print('weight cos sim', F.cosine_similarity(FO_bias_grad.view(-1), grad_bias.view(-1), dim=0))
-                            print('FO_weight_grad norm:', torch.linalg.norm(FO_bias_grad))
-                            print('ZO_weight_grad norm:', torch.linalg.norm(grad_bias))
-                            print('ZO/FO: ', torch.linalg.norm(grad_bias)/torch.linalg.norm(FO_bias_grad))
-                        
                         splited_block.block.conv[idx].weight.grad = grad_w
                         splited_block.block.conv[idx].bias.grad = grad_bias 
                 ### layer-wise ZO estimation        
                 else:
-                    grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad, binary_mask=splited_block.block.conv[conv_idx].binary_mask)
+                    # grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad, binary_mask=splited_block.block.conv[conv_idx].binary_mask)
+                    grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad, binary_mask=mask.bool())
                     
                     if DEBUG:
                         FO_grad = splited_block.block.conv[conv_idx].out_grad
@@ -496,29 +480,6 @@ class ZO_Estim_MC(nn.Module):
                         # print('FO_grad non_zero:', torch.linalg.norm(pruned_FO_grad))
                         # print('ZO_grad non_zero:', torch.linalg.norm(pruned_ZO_grad))
                         # print('cos sim grad_output non_zero', F.cosine_similarity(pruned_FO_grad.view(-1), pruned_ZO_grad.view(-1), dim=0))
-
-                        print('\n Grad output')
-                        print('cos sim grad_output', F.cosine_similarity(FO_grad.view(-1), ZO_grad.view(-1), dim=0))
-                        print('FO_grad:', torch.linalg.norm(FO_grad))
-                        print('ZO_grad:', torch.linalg.norm(ZO_grad))
-
-                        FO_weight_grad = splited_block.block.conv[conv_idx].weight.grad
-                        FO_bias_grad = splited_block.block.conv[conv_idx].bias.grad
-
-                        print(f'\n {splited_block.name}.conv[{conv_idx}]')
-                        print('Weight')
-                        print('weight cos sim', F.cosine_similarity(FO_weight_grad.view(-1), grad_w.view(-1), dim=0))
-                        print('FO_weight_grad norm:', torch.linalg.norm(FO_weight_grad))
-                        print('ZO_weight_grad norm:', torch.linalg.norm(grad_w))
-                        print('ZO/FO: ', torch.linalg.norm(grad_w)/torch.linalg.norm(FO_weight_grad))
-
-                        print('Bias')
-                        print('weight cos sim', F.cosine_similarity(FO_bias_grad.view(-1), grad_bias.view(-1), dim=0))
-                        print('FO_weight_grad norm:', torch.linalg.norm(FO_bias_grad))
-                        print('ZO_weight_grad norm:', torch.linalg.norm(grad_bias))
-                        print('ZO/FO: ', torch.linalg.norm(grad_bias)/torch.linalg.norm(FO_bias_grad))
-
-                    
 
                     if configs.train_config.layerwise_update is None:
                         splited_block.block.conv[conv_idx].weight.grad = grad_w
@@ -1197,6 +1158,57 @@ class ZO_Estim_MC(nn.Module):
                     
         return None
     
+    def get_mixture_ZO_gradient(self, old_loss, verbose=False):
+        split_block_number = configs.ZO_Estim.split_block_number
+        
+        if self.estimate_method == 'forward':
+            _, old_loss_vec = self.obj_fn(return_loss_reduction='none')
+        
+        for trainable_layer_name in self.trainable_layer_list:
+            trainable_layer_name = trainable_layer_name.split('.')
+            block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
+            block_number = int(trainable_layer_name[1])
+
+            for splited_block in self.splited_block_list:
+                if splited_block.name == block_name:
+                    # splited_layer = splited_block
+                    break
+                
+            if 'conv' in trainable_layer_name:
+                conv_idx = int(trainable_layer_name[3])
+            else:
+                conv_idx = None
+            
+            block_idx = splited_block.idx
+            block_in = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss')
+            
+            ##### Estimate gradient
+            
+            if conv_idx == None:
+                raise NotImplementedError
+            else:
+                ### Weight Perturbation
+                if block_number <= split_block_number:
+                    ##### layer
+                    trainable_layer = splited_block.block.conv[conv_idx] 
+                    self.get_layer_param_ZO_gradient(block_idx, trainable_layer, block_in, old_loss, self.trainable_param_list, self.estimate_method, self.sample_method)
+                
+                ### Activation Perturbation    
+                else:
+                    if splited_block.type == QuantizedMbBlock:
+                        ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, old_loss_vec, local_backward_args=True)
+                        grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad, binary_mask=mask.bool())
+                        
+                        if configs.train_config.layerwise_update is None:
+                            splited_block.block.conv[conv_idx].weight.grad = grad_w
+                            splited_block.block.conv[conv_idx].bias.grad = grad_bias
+                            # splited_block.block.conv[conv_idx].out_grad = ZO_grad
+                    else:
+                        raise NotImplementedError
+        
+        return None
+    
+    
     # def get_scale_ZO_gradient(self, old_loss, verbose=False):
 
     #     for trainable_layer_name in self.trainable_layer_list:
@@ -1331,6 +1343,7 @@ class ZO_Estim_MC(nn.Module):
     #                     pass
         
     #     return None
+    
     def create_fwd_hook_get_out_dimension(self):
         def fwd_hook(module, input, output):
             # input is a tuple
@@ -1604,6 +1617,8 @@ class ZO_Estim_MC(nn.Module):
         if self.perturb_method == 'batch':
             self.estim_grads = self.get_batch_ZO_gradient(old_loss=old_loss)
         
+        elif self.perturb_method == 'mixture':
+            self.estim_grads = self.get_mixture_ZO_gradient(old_loss=old_loss)
         # no old_loss: actv old_loss should use non-reduced loss
         elif self.perturb_method == 'activation':
             self.estim_grads = self.get_actv_ZO_gradient()

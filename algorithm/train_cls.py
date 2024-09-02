@@ -167,9 +167,49 @@ def main():
     lr_scheduler = build_lr_scheduler(optimizer, len(data_loader['train']))
 
     if configs.ZO_Estim.en is True:
-        images, labels = next(iter(data_loader['val']))
-        images, labels = images.cuda(), labels.cuda()
-        obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
+        if hasattr(configs, 'layer_selection'):
+            ### create temp config 
+            layer_selection_config = configs.layer_selection
+            
+            images, labels = next(iter(data_loader['train']))
+            images, labels = images.cuda(), labels.cuda()
+            obj_fn = build_obj_fn(layer_selection_config.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
+            
+            LS_ZO_Estim = build_ZO_Estim(layer_selection_config, model=model, obj_fn=obj_fn)
+            
+            optimizer.zero_grad()
+            with torch.no_grad():
+                output = model(images)
+                loss = criterion(output, labels)
+
+                LS_ZO_Estim.update_obj_fn(obj_fn)
+                LS_ZO_Estim.estimate_grad(old_loss=loss)
+            
+            from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
+            import heapq
+            
+            layer_score_dict = {}
+            if layer_selection_config.layer_selection_method == 'ZO-RGN':
+                for name, layer in model.named_modules():
+                    if isinstance(layer, QuantizedConv2d):
+                        G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                        layer_score_dict[name] = G_W_ratio
+            else:
+                raise NotImplementedError
+            
+            # Find the top 5 values
+            layer_selection_num = layer_selection_config.layer_selection_num
+            top_values = heapq.nlargest(layer_selection_num, layer_score_dict.values())
+            top_keys = [key for key, value in layer_score_dict.items() if value in top_values]
+            
+            print(top_keys)
+            
+            configs.ZO_Estim.trainable_layer_list = top_keys
+        else:
+            images, labels = next(iter(data_loader['train']))
+            images, labels = images.cuda(), labels.cuda()
+            obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, model=model, criterion=criterion)
+            
         # obj_fn = None
         ZO_Estim = build_ZO_Estim(configs.ZO_Estim, model=model, obj_fn=obj_fn)
     else:

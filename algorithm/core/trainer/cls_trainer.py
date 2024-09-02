@@ -149,6 +149,59 @@ class ClassificationTrainer(BaseTrainer):
             #                     layer.ZO_grad = torch.zeros_like(layer.weight.grad.data)
             #                 layer.ZO_grad += layer.weight.grad.data / batch_sz
             
+            
+            """
+                Layer selection
+            """
+            # for name, layer in self.model.named_modules():
+            #     if isinstance(layer, QuantizedConv2d):
+            #         print(name)
+
+            # print('||G||')
+            # for layer in self.model.modules():
+            #     if isinstance(layer, QuantizedConv2d):
+            #         G_W_ratio = torch.norm(layer.weight.grad)  
+            #         print(f'{G_W_ratio}') 
+            
+            # print('||G / s||')
+            # for layer in self.model.modules():
+            #     if isinstance(layer, QuantizedConv2d):
+            #         G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1))   
+            #         print(f'{G_W_ratio}')                        
+            
+            # print('||G|| / ||W||')
+            # for layer in self.model.modules():
+            #     if isinstance(layer, QuantizedConv2d):
+            #         G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight)
+            #         print(f'{G_W_ratio}')
+            
+            print('||G / s|| / ||W * s||')
+            for layer in self.model.modules():
+                if isinstance(layer, QuantizedConv2d):
+                    G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                    print(f'{G_W_ratio}')
+            
+            # print('||G / s^2|| / ||W||')
+            # for layer in self.model.modules():
+            #     if isinstance(layer, QuantizedConv2d):
+            #         G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)**2) / torch.norm(layer.weight)
+            #         print(f'{G_W_ratio}')
+            
+            print('||G|| / ||W * s||')
+            for layer in self.model.modules():
+                if isinstance(layer, QuantizedConv2d):
+                    G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                    print(f'{G_W_ratio}')
+            
+            # for block in self.model[1]:
+            #     for layer in block.conv:
+            #         if hasattr(layer, 'weight'):  
+                        
+            #             G_W_ratio = torch.norm(layer.weight.grad / (layer.weight + 1e-6))
+            #             G_W_ratio = torch.norm((layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / ((layer.weight + 1e-6) * layer.scale_w.view(-1,1,1,1)))
+                        
+            #             print(f'{G_W_ratio}')
+            
             print('layer cos sim')
             for layer in self.model.modules():
                 if isinstance(layer, QuantizedConv2d):
@@ -172,7 +225,7 @@ class ClassificationTrainer(BaseTrainer):
             print(f'model wise MSE {torch.linalg.norm(ZO_grad_vec-FO_grad_vec) ** 2}')
                 
                 
-        ##### Layer Selection #####
+        ##### Fisher #####
         if OUT_GRAD_DEBUG:
             for batch_idx, (images, labels) in enumerate(self.data_loader['train']):
                 if batch_idx >= configs.run_config.grad_accumulation_steps:
@@ -362,25 +415,6 @@ class ClassificationTrainer(BaseTrainer):
                             self.ZO_Estim.update_grad()
                 
                 if PARAM_GRAD_DEBUG:
-                    """
-                        Layer selection
-                    """
-                    for block in self.model[1]:
-                        for layer in block.conv:
-                            if hasattr(layer, 'weight'):  
-                                ### Gradient Weight Ratio   
-                                # G_W_ratio = torch.norm(layer.weight.grad)   
-                                # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1))                           
-                                # G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight)
-                                # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
-                                # G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)**2) / torch.norm(layer.weight)
-                                G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
-                                
-                                # G_W_ratio = torch.norm(layer.weight.grad / (layer.weight + 1e-6))
-                                # G_W_ratio = torch.norm((layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / ((layer.weight + 1e-6) * layer.scale_w.view(-1,1,1,1)))
-                                
-                                print(f'{G_W_ratio}')
-                    
                     """
                         Single Layer similarity
                     """
