@@ -47,17 +47,17 @@ data_provider:
   base_batch_size: 100
 
 run_config:
-  warmup_epochs: 0
-  n_epochs: 1
-  # warmup_epochs: 5
-  # n_epochs: 50
+  # warmup_epochs: 0
+  # n_epochs: 1
+  warmup_epochs: 5
+  n_epochs: 45
   # n_epochs: 200
   # n_epochs: 2000
   # n_epochs: 50000
 
   ### no gradint accumulation
-  bs256_lr: 0.1
-  # bs256_lr: 0.01
+  # bs256_lr: 0.1
+  bs256_lr: 0.01
   # bs256_lr: 0.001
   # bs256_lr: 0.0001
 
@@ -65,9 +65,9 @@ run_config:
   # base_lr: 0.004
   # grad_accumulation_steps: 1
 
-  iteration_decay: 0
+  # iteration_decay: 0
 
-  eval_per_epochs: 1
+  # eval_per_epochs: 1
 
   # optimizer
   # optimizer_name: sgd
@@ -93,12 +93,12 @@ backward_config:
   # n_bit: 8
 
   ##### Full model
-  enable_backward_config: 0
+  # enable_backward_config: 0
 
   ##### cls-only
-  # enable_backward_config: 1
-  # n_bias_update: 0
-  # n_weight_update: 0
+  enable_backward_config: 1
+  n_bias_update: 0
+  n_weight_update: 0
 
   ########## FGVC datasets ##########
 
@@ -356,7 +356,7 @@ ZO_Estim:
   # prior_method: mov_avg_perturb
   # prior_method: last_grad_neighbor
 
-
+############################## Layer Selection ##############################
 layer_selection:
   layer_selection_method: ZO-RGN
   layer_selection_N: 100
@@ -369,7 +369,7 @@ layer_selection:
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 100
+  n_sample: 10
   signSGD: False
 
   # n_sample_distri: uniform
@@ -384,9 +384,9 @@ layer_selection:
   trainable_param_list: ['weight']
   # trainable_param_list: ['bias', 'scale_y','zero_y','scale_w', 'gamma', 'beta']
 
-  trainable_layer_list: layer-all
-  # trainable_layer_list: layer-first-20
-  # trainable_layer_list: layer-last-30
+  # trainable_layer_list: layer-all
+  trainable_layer_list: first-24
+  # trainable_layer_list: last-21
 
   estimate_method: forward
   # estimate_method: antithetic
@@ -400,13 +400,14 @@ layer_selection:
   obj_fn_type: classifier_layerwise
   perturb_method: mixture
 
-  split_block_number: 5
+  split_block_number: 3
 
   sigma: {
     'weight': 1,
     'bias': 100,
-    'actv': 10,
+    'actv': 1,
   }
+  # sigma: 0.1
 
   perturb_before_round: 0
 

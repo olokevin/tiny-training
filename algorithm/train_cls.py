@@ -191,8 +191,10 @@ def main():
             layer_score_dict = {}
             if layer_selection_config.layer_selection_method == 'ZO-RGN':
                 for name, layer in model.named_modules():
-                    if isinstance(layer, QuantizedConv2d):
+                    if name in LS_ZO_Estim.trainable_layer_list:
                         G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                        if G_W_ratio > 255:
+                            G_W_ratio = 0
                         layer_score_dict[name] = G_W_ratio
             else:
                 raise NotImplementedError
@@ -202,7 +204,7 @@ def main():
             top_values = heapq.nlargest(layer_selection_num, layer_score_dict.values())
             top_keys = [key for key, value in layer_score_dict.items() if value in top_values]
             
-            print(top_keys)
+            logger.info(f'trainable_layer_list: {top_keys}')
             
             configs.ZO_Estim.trainable_layer_list = top_keys
         else:

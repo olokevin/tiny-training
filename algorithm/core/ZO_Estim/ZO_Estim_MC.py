@@ -505,12 +505,18 @@ class ZO_Estim_MC(nn.Module):
         if configs.train_config.layerwise_update and self.estimate_method == 'forward':
             _, old_loss = self.obj_fn(starting_idx=splited_block.idx, input=block_in, return_loss_reduction='none')
 
-        # assert type(self.sigma) is int
-        if type(self.sigma) is not int:
-            sigma = self.sigma / splited_block.block.conv[conv_idx].scale_y.view(-1, 1, 1, 1)
-            sigma = sigma.round()
+        if isinstance(self.sigma, dict):
+            sigma = self.sigma['actv']
         else:
             sigma = self.sigma
+            
+        if type(sigma) is float:
+            q_sigma = sigma / splited_block.block.conv[conv_idx].scale_y.view(-1, 1, 1, 1)
+            q_sigma = q_sigma.round()
+        elif type(sigma) is int:
+            q_sigma = sigma
+        else:
+            raise ValueError('Unknown sigma type')
 
         if configs.train_config.ZO_grad_prune_ratio is not None:
             ZO_grad_prune_ratio = configs.train_config.ZO_grad_prune_ratio
@@ -569,7 +575,7 @@ class ZO_Estim_MC(nn.Module):
         if self.sample_method == 'coord_basis':
             for i in range(post_actv.shape[1]):
                 org_post_actv = post_actv[:, i].int()
-                post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
+                post_actv[:, i] = post_actv[:, i] + mask[:, i] * sigma
                 if splited_block.type == QuantizedMbBlock:
                     a_bit = splited_block.block.conv[conv_idx].a_bit
                     post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
@@ -591,7 +597,7 @@ class ZO_Estim_MC(nn.Module):
                             ZO_grad[batch_idx,i] = 0
 
                 elif self.estimate_method == 'antithetic':
-                    post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
+                    post_actv[:, i] = post_actv[:, i] - mask[:, i] * sigma
                     if splited_block.type == QuantizedMbBlock:
                         a_bit = splited_block.block.conv[conv_idx].a_bit
                         post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
@@ -634,7 +640,7 @@ class ZO_Estim_MC(nn.Module):
                 else:
                     u = mask * self._sample_unit_sphere_quantized(post_actv.shape, self.sample_method, self.device)
 
-                post_actv = post_actv + u * sigma
+                post_actv = post_actv + u * q_sigma
 
                 if splited_block.type == QuantizedMbBlock:
                     a_bit = splited_block.block.conv[conv_idx].a_bit
@@ -650,10 +656,10 @@ class ZO_Estim_MC(nn.Module):
                 post_actv = org_post_actv
 
                 if self.estimate_method == 'forward':
-                    ZO_grad += (pos_loss - old_loss).view(-1,1) / self.sigma * u
+                    ZO_grad += (pos_loss - old_loss).view(-1,1) / sigma * u
 
                 elif self.estimate_method == 'antithetic':
-                    post_actv = post_actv - u * sigma
+                    post_actv = post_actv - u * q_sigma
 
                     if splited_block.type == QuantizedMbBlock:
                         a_bit = splited_block.block.conv[conv_idx].a_bit
@@ -667,7 +673,7 @@ class ZO_Estim_MC(nn.Module):
                     _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=block_out, return_loss_reduction='none')
                     self.forward_counter += 1
                     
-                    ZO_grad += (pos_loss - neg_loss).view(-1,1) / 2.0 / self.sigma * u
+                    ZO_grad += (pos_loss - neg_loss).view(-1,1) / 2.0 / sigma * u
 
                     post_actv = org_post_actv
               
@@ -676,7 +682,7 @@ class ZO_Estim_MC(nn.Module):
         else:
             raise NotImplementedError('Unknown sample method')
         
-        if type(self.sigma) is not int:
+        if type(sigma) is float:
             ### scale to theta_bar's gradient
             ZO_grad = ZO_grad * splited_block.block.conv[conv_idx].scale_y
         
