@@ -135,6 +135,9 @@ class _QuantizedConv2dFunc(torch.autograd.Function):
     def forward(ctx, x, weight, bias, zero_x, effective_scale, stride, padding, dilation, groups, BP_grad_prune_ratio):
         x = x.round()  # ensure x is int
         weight = weight.round()  # ensure weight is int
+        
+        # x = x.round().clamp(- 2 ** 7, 2 ** 7 - 1)
+        # weight = weight.round().clamp(- 2 ** 7, 2 ** 7 - 1)
 
         ctx.stride = stride
         ctx.padding = padding

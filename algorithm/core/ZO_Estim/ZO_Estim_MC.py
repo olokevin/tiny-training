@@ -604,7 +604,7 @@ class ZO_Estim_MC(nn.Module):
                 post_actv[:, i] = post_actv[:, i] + mask[:, i] * sigma
                 if splited_block.type == QuantizedMbBlock:
                     a_bit = splited_block.block.conv[conv_idx].a_bit
-                    post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                    post_actv.data = post_actv.data.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                 
                 pos_distance = post_actv[:, i] - org_post_actv
 
@@ -626,7 +626,7 @@ class ZO_Estim_MC(nn.Module):
                     post_actv[:, i] = post_actv[:, i] - mask[:, i] * sigma
                     if splited_block.type == QuantizedMbBlock:
                         a_bit = splited_block.block.conv[conv_idx].a_bit
-                        post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                        post_actv.data = post_actv.data.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                     
                     neg_distance = org_post_actv - post_actv[:, i]
                     
@@ -670,7 +670,7 @@ class ZO_Estim_MC(nn.Module):
 
                 if splited_block.type == QuantizedMbBlock:
                     a_bit = splited_block.block.conv[conv_idx].a_bit
-                    post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                    post_actv.data = post_actv.data.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                 
                 # pos_distance = post_actv[:, i] - org_post_actv
 
@@ -689,7 +689,7 @@ class ZO_Estim_MC(nn.Module):
 
                     if splited_block.type == QuantizedMbBlock:
                         a_bit = splited_block.block.conv[conv_idx].a_bit
-                        post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                        post_actv.data = post_actv.data.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                     
                     # pos_distance = post_actv[:, i] - org_post_actv
 
@@ -772,7 +772,7 @@ class ZO_Estim_MC(nn.Module):
 
                 post_actv[:, i] = post_actv[:, i] + mask[:, i] * self.sigma
                 a_bit = splited_block.block.a_bit
-                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                post_actv.data = post_actv.data.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                 
                 pos_distance = post_actv[:, i] - org_post_actv
 
@@ -792,7 +792,7 @@ class ZO_Estim_MC(nn.Module):
 
                     post_actv[:, i] = post_actv[:, i] - mask[:, i] * self.sigma
                     a_bit = splited_block.block.a_bit
-                    post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                    post_actv.data = post_actv.data.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                     
                     neg_distance = org_post_actv - post_actv[:, i]
                 
@@ -823,7 +823,7 @@ class ZO_Estim_MC(nn.Module):
                 post_actv = post_actv + u * self.sigma
 
                 a_bit = splited_block.block.a_bit
-                post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                post_actv.data = post_actv.data.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                 # pos_distance = post_actv - org_post_actv
 
                 _, pos_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
@@ -838,7 +838,7 @@ class ZO_Estim_MC(nn.Module):
                     post_actv = post_actv - u * self.sigma
 
                     a_bit = splited_block.block.a_bit
-                    post_actv.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
+                    post_actv.data = post_actv.data.clamp(- 2 ** (a_bit - 1), 2 ** (a_bit - 1) - 1)
                     # neg_distance = org_post_actv - post_actv
                 
                     _, neg_loss = self.obj_fn(starting_idx=splited_block.idx+1, input=post_actv.view(post_actv_shape), return_loss_reduction='none')
@@ -990,6 +990,8 @@ class ZO_Estim_MC(nn.Module):
                     n_sample = self.n_sample / 42
                 elif n_sample_distri == 'dim':
                     n_sample = int(self.n_sample * param_dim / self.ZO_dimension)
+                elif n_sample_distri == 'half':
+                    n_sample = int(self.n_sample / 2)
             else:
                 n_sample = self.n_sample
             for i in range(n_sample):
@@ -999,7 +1001,10 @@ class ZO_Estim_MC(nn.Module):
                 param.add_(u * sigma)
                 if type(trainable_layer) == QuantizedConv2d:
                     w_bit = trainable_layer.w_bit
-                    param.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
+                    if param.dim() == 4:
+                        param.data = param.data.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
+                    elif param.dim() == 1:
+                        param.data = param.data.clamp(- 2 ** (4*w_bit - 1), 2 ** (4*w_bit - 1) - 1)
                 _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
                 param.copy_(old_param)
 
@@ -1011,7 +1016,10 @@ class ZO_Estim_MC(nn.Module):
                     param.sub_(u * sigma)
                     if type(trainable_layer) == QuantizedConv2d:
                         w_bit = trainable_layer.w_bit
-                        param.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
+                        if param.dim() == 4:
+                            param.data = param.data.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
+                        elif param.dim() == 1:
+                            param.data = param.data.clamp(- 2 ** (4*w_bit - 1), 2 ** (4*w_bit - 1) - 1)
                     _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
                     param.copy_(old_param)
 
@@ -1049,100 +1057,200 @@ class ZO_Estim_MC(nn.Module):
             return NotImplementedError('sample method not implemented yet')
 
         param_ZO_grad = param_ZO_grad.view(param_shape)
-        return param_ZO_grad, loss_diff
+        
+        return param_ZO_grad
     
-    def get_scale_w_ZO_gradient(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method):
-        param_dim = param.numel()
-        param_shape = param.shape
-        param_vec = param.view(-1)
-        old_param_vec = param_vec * 1
+    
+    def get_weight_and_bias_ZO_gradient(self, block_idx, trainable_layer, block_in, old_loss):
+        dimension = trainable_layer.weight.numel() + trainable_layer.bias.numel() 
+        trainable_layer.weight.grad = torch.zeros_like(trainable_layer.weight)
+        trainable_layer.bias.grad = torch.zeros_like(trainable_layer.bias)
 
-        param_ZO_grad = torch.zeros_like(param_vec, device=self.device)
-
-        # sigma = torch.mean(param)
-        # print(torch.mean(param))
-
-        if sample_method == 'coord_basis':
-            for i in range(param_dim):
+        if self.sample_method == 'coord_basis':
+            raise NotImplementedError
+        else:
+            u = dict()
+            old_param = dict()
+            old_param['weight'] = trainable_layer.weight.data.clone()
+            old_param['bias'] = trainable_layer.bias.data.clone()
+            
+            n_sample = self.n_sample
+            for i in range(n_sample):
+                ### Generate random perturbation with the same shape as the parameter
+                u['weight'] = self._sample_unit_sphere_quantized(trainable_layer.weight.shape, self.sample_method, self.device)
+                u['bias'] = self._sample_unit_sphere_quantized(trainable_layer.bias.shape, self.sample_method, self.device)
                 
-                old_weight = trainable_layer.weight.data[:,i,:,:].round()
+                # p_sigma = self.sigma
+                
+                if isinstance(self.sigma, dict):
+                    weight_sigma = self.sigma['weight']
+                    bias_sigma = self.sigma['bias']
+                else:
+                    weight_sigma = self.sigma
+                    bias_sigma = self.sigma
+                
+                ### Add perturbation to the parameter
                 # pos
-                param_vec[i] = param_vec[i] + sigma
-                trainable_layer.weight.data[:,i,:,:] = (old_param_vec[i] * trainable_layer.weight.data[:,i,:,:] / param_vec[i]).round()
-
+                if type(weight_sigma) is not int:
+                    trainable_layer.weight.add_(u['weight'] * (weight_sigma / trainable_layer.scale_w.view(-1, 1, 1, 1)).round() )
+                    trainable_layer.bias.add_(u['bias'] * (bias_sigma / trainable_layer.scale_x / trainable_layer.scale_w).round() )
+                else:
+                    trainable_layer.weight.add_(u['weight'] * weight_sigma)
+                    trainable_layer.bias.add_(u['bias'] * bias_sigma)
+                
+                trainable_layer.weight.data = trainable_layer.weight.data.clamp(- 2 ** (trainable_layer.w_bit - 1), 2 ** (trainable_layer.w_bit - 1) - 1)
+                trainable_layer.bias.data = trainable_layer.bias.data.clamp(- 2 ** (4*trainable_layer.w_bit - 1), 2 ** (4*trainable_layer.w_bit - 1) - 1)
+                        
                 _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
-                param_vec[i] = param_vec[i] - sigma
-                trainable_layer.weight.data[:,i,:,:] = old_weight
+                
+                trainable_layer.weight.copy_(old_param['weight'])
+                trainable_layer.bias.copy_(old_param['bias'])
 
-                # neg
-                if estimate_method == 'forward':
-                    param_ZO_grad[i] = (pos_loss - old_loss) / sigma
-                elif estimate_method == 'antithetic':
-                    param_vec[i] = param_vec[i] - sigma
-                    trainable_layer.weight.data[:,i,:,:] = (old_param_vec[i] * trainable_layer.weight.data[:,i,:,:] / param_vec[i]).round()
-
+                ### Estimate gradient
+                if self.estimate_method == 'forward':
+                    if type(weight_sigma) is not int:
+                        trainable_layer.weight.grad.add_((pos_loss - old_loss) / weight_sigma / n_sample * u['weight'] * trainable_layer.scale_w.view(-1, 1, 1, 1))
+                        trainable_layer.bias.grad.add_((pos_loss - old_loss) / bias_sigma / n_sample * u['bias'] * trainable_layer.scale_x * trainable_layer.scale_w)
+                    else:
+                        trainable_layer.weight.grad.add_((pos_loss - old_loss) / weight_sigma / n_sample * u['weight'])
+                        trainable_layer.bias.grad.add_((pos_loss - old_loss) / bias_sigma / n_sample * u['bias'])
+                            
+                elif self.estimate_method == 'antithetic':
+                    if type(weight_sigma) is not int:
+                        trainable_layer.weight.sub_(u['weight'] * (weight_sigma / trainable_layer.scale_w.view(-1, 1, 1, 1)).round())
+                        trainable_layer.bias.sub_(u['bias'] * (bias_sigma / trainable_layer.scale_x / trainable_layer.scale_w).round())
+                    else:
+                        trainable_layer.weight.sub_(u['weight'] * weight_sigma)
+                        trainable_layer.bias.sub_(u['bias'] * bias_sigma)
+                    
+                    trainable_layer.weight.data = trainable_layer.weight.data.clamp(- 2 ** (trainable_layer.w_bit - 1), 2 ** (trainable_layer.w_bit - 1) - 1)
+                    trainable_layer.bias.data = trainable_layer.bias.data.clamp(- 2 ** (4*trainable_layer.w_bit - 1), 2 ** (4*trainable_layer.w_bit - 1) - 1)
+                    
                     _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
                     
-                    param_vec[i] = param_vec[i] + sigma
-                    trainable_layer.weight.data[:,i,:,:] = old_weight
+                    trainable_layer.weight.copy_(old_param['weight'])
+                    trainable_layer.bias.copy_(old_param['bias'])
 
-                    param_ZO_grad[i] = (pos_loss - neg_loss) / 2 / sigma
+                    if type(weight_sigma) is not int:
+                        trainable_layer.weight.grad.add_((pos_loss - neg_loss) / 2 / weight_sigma / n_sample * u['weight'] * trainable_layer.scale_w.view(-1, 1, 1, 1))
+                        trainable_layer.bias.grad.add_((pos_loss - neg_loss) / 2 / bias_sigma / n_sample * u['bias'] * trainable_layer.scale_x * trainable_layer.scale_w)
+                    else:
+                        trainable_layer.weight.grad.add_((pos_loss - neg_loss) / 2 / weight_sigma / n_sample * u['weight'])
+                        trainable_layer.bias.grad.add_((pos_loss - neg_loss) / 2 / bias_sigma / n_sample * u['bias'])
+                
+            if hasattr(configs.ZO_Estim, 'scale'):
+                if configs.ZO_Estim.scale == 'sqrt-dim':
+                    # param.grad = param.grad * math.sqrt(self.n_sample / (param.numel() - 1))
+                    # param.grad = param.grad * math.sqrt(self.n_sample / (self.n_sample + param.numel() + 1))
+                    trainable_layer.weight.grad = trainable_layer.weight.grad * math.sqrt(self.n_sample / (self.n_sample + dimension - 1))
+                    trainable_layer.bias.grad = trainable_layer.bias.grad * math.sqrt(self.n_sample / (self.n_sample + dimension - 1))
+                elif configs.ZO_Estim.scale == 'dim':
+                    trainable_layer.weight.grad = trainable_layer.weight.grad * (self.n_sample / (self.n_sample + dimension - 1))
+                    trainable_layer.bias.grad = trainable_layer.bias.grad * (self.n_sample / (self.n_sample + dimension - 1))
+                elif type(configs.ZO_Estim.scale) is int:
+                    trainable_layer.weight.grad = trainable_layer.weight.grad / configs.ZO_Estim.scale
+                    trainable_layer.bias.grad = trainable_layer.bias.grad / configs.ZO_Estim.scale
                 else:
-                    raise NotImplementedError('Unknown estimate method')
-        elif sample_method == 'bernoulli':
-            old_weight = trainable_layer.weight.data.round()
-            for i in range(self.n_sample):
-                u = self._sample_unit_sphere_quantized(param_vec.shape, sample_method, self.device)
-                # pos
-                param_vec.add_(u * sigma)
-                trainable_layer.weight.data = (old_param_vec.view(1,-1,1,1) * trainable_layer.weight.data / param_vec.view(1,-1,1,1)).round()
+                    raise NotImplementedError(f'Unknown {configs.ZO_Estim.scale}')
+                            
+                        
+        return None
+    
+    # def get_scale_w_ZO_gradient(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method):
+    #     param_dim = param.numel()
+    #     param_shape = param.shape
+    #     param_vec = param.view(-1)
+    #     old_param_vec = param_vec * 1
 
-                _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+    #     param_ZO_grad = torch.zeros_like(param_vec, device=self.device)
 
-                param_vec.sub_(u * sigma)
-                trainable_layer.weight.data = old_weight
+    #     # sigma = torch.mean(param)
+    #     # print(torch.mean(param))
 
-                # neg
-                if estimate_method == 'forward':
-                    loss_diff = (pos_loss - old_loss) / sigma
-                    param_ZO_grad += (pos_loss - old_loss) / sigma * u
-                elif estimate_method == 'antithetic':
-                    param_vec.sub_(u * sigma)
-                    trainable_layer.weight.data = (old_param_vec.view(1,-1,1,1) * trainable_layer.weight.data / param_vec.view(1,-1,1,1)).round()
+    #     if sample_method == 'coord_basis':
+    #         for i in range(param_dim):
+                
+    #             old_weight = trainable_layer.weight.data[:,i,:,:].round()
+    #             # pos
+    #             param_vec[i] = param_vec[i] + sigma
+    #             trainable_layer.weight.data[:,i,:,:] = (old_param_vec[i] * trainable_layer.weight.data[:,i,:,:] / param_vec[i]).round()
 
-                    _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+    #             _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+    #             param_vec[i] = param_vec[i] - sigma
+    #             trainable_layer.weight.data[:,i,:,:] = old_weight
 
-                    param_vec.add_(u * sigma)
-                    trainable_layer.weight.data = old_weight
+    #             # neg
+    #             if estimate_method == 'forward':
+    #                 param_ZO_grad[i] = (pos_loss - old_loss) / sigma
+    #             elif estimate_method == 'antithetic':
+    #                 param_vec[i] = param_vec[i] - sigma
+    #                 trainable_layer.weight.data[:,i,:,:] = (old_param_vec[i] * trainable_layer.weight.data[:,i,:,:] / param_vec[i]).round()
 
-                    loss_diff = (pos_loss - neg_loss) / 2 / sigma
-                    param_ZO_grad += (pos_loss - neg_loss) / 2 / sigma * u
-            param_ZO_grad = param_ZO_grad / self.n_sample
-        else:
-            return NotImplementedError('sample method not implemented yet')
+    #                 _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+                    
+    #                 param_vec[i] = param_vec[i] + sigma
+    #                 trainable_layer.weight.data[:,i,:,:] = old_weight
 
-        param_ZO_grad = param_ZO_grad.view(param_shape)
-        return param_ZO_grad, loss_diff
+    #                 param_ZO_grad[i] = (pos_loss - neg_loss) / 2 / sigma
+    #             else:
+    #                 raise NotImplementedError('Unknown estimate method')
+    #     elif sample_method == 'bernoulli':
+    #         old_weight = trainable_layer.weight.data.round()
+    #         for i in range(self.n_sample):
+    #             u = self._sample_unit_sphere_quantized(param_vec.shape, sample_method, self.device)
+    #             # pos
+    #             param_vec.add_(u * sigma)
+    #             trainable_layer.weight.data = (old_param_vec.view(1,-1,1,1) * trainable_layer.weight.data / param_vec.view(1,-1,1,1)).round()
+
+    #             _, pos_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+
+    #             param_vec.sub_(u * sigma)
+    #             trainable_layer.weight.data = old_weight
+
+    #             # neg
+    #             if estimate_method == 'forward':
+    #                 loss_diff = (pos_loss - old_loss) / sigma
+    #                 param_ZO_grad += (pos_loss - old_loss) / sigma * u
+    #             elif estimate_method == 'antithetic':
+    #                 param_vec.sub_(u * sigma)
+    #                 trainable_layer.weight.data = (old_param_vec.view(1,-1,1,1) * trainable_layer.weight.data / param_vec.view(1,-1,1,1)).round()
+
+    #                 _, neg_loss = self.obj_fn(starting_idx=block_idx, input=block_in, return_loss_reduction='mean')
+
+    #                 param_vec.add_(u * sigma)
+    #                 trainable_layer.weight.data = old_weight
+
+    #                 loss_diff = (pos_loss - neg_loss) / 2 / sigma
+    #                 param_ZO_grad += (pos_loss - neg_loss) / 2 / sigma * u
+    #         param_ZO_grad = param_ZO_grad / self.n_sample
+    #     else:
+    #         return NotImplementedError('sample method not implemented yet')
+
+    #     param_ZO_grad = param_ZO_grad.view(param_shape)
+    #     return param_ZO_grad, loss_diff
     
     def get_layer_param_ZO_gradient(self, block_idx, trainable_layer, block_in, old_loss, trainable_param_list, estimate_method, sample_method):        
         for trainable_param_name in trainable_param_list:
-            if hasattr(trainable_layer, trainable_param_name) == False:
-                break
+            if trainable_param_name == 'weight+bias':
+                self.get_weight_and_bias_ZO_gradient(block_idx, trainable_layer, block_in, old_loss)
             else:
-                param = getattr(trainable_layer, trainable_param_name)
-                if isinstance(self.sigma, dict):
-                    sigma = self.sigma[trainable_param_name]
+                if hasattr(trainable_layer, trainable_param_name) == False:
+                    break
                 else:
-                    sigma = self.sigma
-                
-                if trainable_param_name == 'scale_w':
-                    param_ZO_grad, loss_diff = self.get_scale_w_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
-                else:
-                    param_ZO_grad, loss_diff = self.get_single_param_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
-                
-                param.grad = param_ZO_grad
-        
-        return loss_diff
+                    param = getattr(trainable_layer, trainable_param_name)
+                    if isinstance(self.sigma, dict):
+                        sigma = self.sigma[trainable_param_name]
+                    else:
+                        sigma = self.sigma
+                    
+                    # if trainable_param_name == 'scale_w':
+                    #     self.get_scale_w_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
+                    # else:
+                    param_ZO_grad = self.get_single_param_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
+                    
+                    param.grad = param_ZO_grad
+
+        return None
     
     def get_param_ZO_gradient(self, old_loss, verbose=False):
         for trainable_layer_name in self.trainable_layer_list:
@@ -1402,7 +1510,7 @@ class ZO_Estim_MC(nn.Module):
             module.sigma = sigma
             module.u_actv = self._sample_unit_sphere_quantized(output.shape, self.sample_method, self.device)
             output += sigma * module.u_actv * module.binary_mask
-            output.clamp(- 2 ** (module.a_bit - 1), 2 ** (module.a_bit - 1) - 1)
+            output.data = output.data.clamp(- 2 ** (module.a_bit - 1), 2 ** (module.a_bit - 1) - 1)
         return fwd_hook
 
     # def create_fwd_hook_local_backward(self, loss_diff):
@@ -1521,15 +1629,15 @@ class ZO_Estim_MC(nn.Module):
     
     def get_all_param_ZO_gradient(self, old_loss):
         dimension = self.ZO_dimension
-        # for name, param in self.model.named_parameters():
-        #     if any(keyword in name for keyword in self.trainable_layer_list):
-        #         dimension += param.numel()
-        #         param.grad = torch.zeros_like(param)
+        for name, param in self.model.named_parameters():
+            if any(keyword in name for keyword in self.trainable_layer_list):
+                param.grad = torch.zeros_like(param)
         
         if self.sample_method == 'coord_basis':
             raise NotImplementedError
         else:
             u = dict()
+            old_param = dict()
             n_sample = self.n_sample
             for i in range(n_sample):
                 ### Generate random perturbation with the same shape as the parameter
@@ -1537,6 +1645,8 @@ class ZO_Estim_MC(nn.Module):
                     if any(keyword in name for keyword in self.trainable_layer_list):
                         u[name+'.weight'] = self._sample_unit_sphere_quantized(module.weight.shape, self.sample_method, self.device)
                         u[name+'.bias'] = self._sample_unit_sphere_quantized(module.bias.shape, self.sample_method, self.device)
+                        old_param[name+'.weight'] = module.weight.data.clone()
+                        old_param[name+'.bias'] = module.bias.data.clone()
                 # for name, param in self.model.named_parameters():
                 #     if any(keyword in name for keyword in self.trainable_layer_list):
                 #         u[name] = self._sample_unit_sphere_quantized(param.shape, self.sample_method, self.device)
@@ -1557,26 +1667,28 @@ class ZO_Estim_MC(nn.Module):
                             module.weight.add_(u[name+'.weight'] * p_sigma)
                             module.bias.add_(u[name+'.bias'] * p_sigma)
                         
+                        module.weight.data = module.weight.data.clamp(- 2 ** (module.w_bit - 1), 2 ** (module.w_bit - 1) - 1)
+                        module.bias.data = module.bias.data.clamp(- 2 ** (4*module.w_bit - 1), 2 ** (4*module.w_bit - 1) - 1)
+                        
                 # for name, param in self.model.named_parameters():
                 #     if any(keyword in name for keyword in self.trainable_layer_list):
                 #         param.add_(u[name] * p_sigma)
                     
                 _, pos_loss = self.obj_fn()
+                
+                for name, module in self.model.named_modules():
+                    if any(keyword in name for keyword in self.trainable_layer_list):
+                        module.weight.copy_(old_param[name+'.weight'])
+                        module.bias.copy_(old_param[name+'.bias'])
 
                 ### Estimate gradient
                 if self.estimate_method == 'forward':
                     for name, module in self.model.named_modules():
                         if any(keyword in name for keyword in self.trainable_layer_list):
                             if type(p_sigma) is not int:
-                                module.weight.sub_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
-                                module.bias.sub_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round())
-                                
                                 module.weight.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
                                 module.bias.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
                             else:
-                                module.weight.sub_(u[name+'.weight'] * p_sigma)
-                                module.bias.sub_(u[name+'.bias'] * p_sigma)
-                                
                                 module.weight.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.weight'])
                                 module.bias.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.bias'])
                             
@@ -1588,11 +1700,14 @@ class ZO_Estim_MC(nn.Module):
                     for name, module in self.model.named_modules():
                         if any(keyword in name for keyword in self.trainable_layer_list):
                             if type(p_sigma) is not int:
-                                module.weight.sub_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() * 2 )
-                                module.bias.sub_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round() * 2)
+                                module.weight.sub_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round())
+                                module.bias.sub_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round())
                             else:
-                                module.weight.sub_(u[name+'.weight'] * p_sigma * 2)
-                                module.bias.sub_(u[name+'.bias'] * p_sigma * 2)
+                                module.weight.sub_(u[name+'.weight'] * p_sigma)
+                                module.bias.sub_(u[name+'.bias'] * p_sigma)
+                            
+                            module.weight.data = module.weight.data.clamp(- 2 ** (module.w_bit - 1), 2 ** (module.w_bit - 1) - 1)
+                            module.bias.data = module.bias.data.clamp(- 2 ** (4*module.w_bit - 1), 2 ** (4*module.w_bit - 1) - 1)
                                 
                     # for name, param in self.model.named_parameters():
                     #     if any(keyword in name for keyword in self.trainable_layer_list):
@@ -1602,16 +1717,13 @@ class ZO_Estim_MC(nn.Module):
                     
                     for name, module in self.model.named_modules():
                         if any(keyword in name for keyword in self.trainable_layer_list):
+                            module.weight.copy_(old_param[name+'.weight'])
+                            module.bias.copy_(old_param[name+'.bias'])
+
                             if type(p_sigma) is not int:
-                                module.weight.add_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
-                                module.bias.add_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round())
-                                
                                 module.weight.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
                                 module.bias.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
                             else:
-                                module.weight.add_(u[name+'.weight'] * p_sigma)
-                                module.bias.add_(u[name+'.bias'] * p_sigma)
-                                
                                 module.weight.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.weight'])
                                 module.bias.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.bias'])
                     # for name, param in self.model.named_parameters():
