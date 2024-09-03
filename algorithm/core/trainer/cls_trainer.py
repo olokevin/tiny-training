@@ -175,11 +175,11 @@ class ClassificationTrainer(BaseTrainer):
             #         G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight)
             #         print(f'{G_W_ratio}')
             
-            print('||G / s|| / ||W * s||')
-            for layer in self.model.modules():
-                if isinstance(layer, QuantizedConv2d):
-                    G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
-                    print(f'{G_W_ratio}')
+            # print('||G / s|| / ||W * s||')
+            # for layer in self.model.modules():
+            #     if isinstance(layer, QuantizedConv2d):
+            #         G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+            #         print(f'{G_W_ratio}')
             
             # print('||G / s^2|| / ||W||')
             # for layer in self.model.modules():
@@ -187,11 +187,11 @@ class ClassificationTrainer(BaseTrainer):
             #         G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)**2) / torch.norm(layer.weight)
             #         print(f'{G_W_ratio}')
             
-            print('||G|| / ||W * s||')
-            for layer in self.model.modules():
-                if isinstance(layer, QuantizedConv2d):
-                    G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
-                    print(f'{G_W_ratio}')
+            # print('||G|| / ||W * s||')
+            # for layer in self.model.modules():
+            #     if isinstance(layer, QuantizedConv2d):
+            #         G_W_ratio = torch.norm(layer.weight.grad) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+            #         print(f'{G_W_ratio}')
             
             # for block in self.model[1]:
             #     for layer in block.conv:
