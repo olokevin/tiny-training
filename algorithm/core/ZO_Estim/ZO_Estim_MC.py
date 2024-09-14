@@ -508,9 +508,13 @@ class ZO_Estim_MC(nn.Module):
                         # print('cos sim grad_output non_zero', F.cosine_similarity(pruned_FO_grad.view(-1), pruned_ZO_grad.view(-1), dim=0))
 
                     if configs.train_config.layerwise_update is None:
-                        splited_block.block.conv[conv_idx].weight.grad = grad_w
-                        splited_block.block.conv[conv_idx].bias.grad = grad_bias
-                        splited_block.block.conv[conv_idx].out_grad = ZO_grad
+                        if splited_block.block.conv[conv_idx].weight.grad is None:
+                            splited_block.block.conv[conv_idx].weight.grad = grad_w
+                            splited_block.block.conv[conv_idx].bias.grad = grad_bias
+                        else:
+                            splited_block.block.conv[conv_idx].weight.grad += grad_w
+                            splited_block.block.conv[conv_idx].bias.grad += grad_bias
+                        # splited_block.block.conv[conv_idx].out_grad = ZO_grad
                     else:
                         ##### layerwise update
                         this_layer = splited_block.block.conv[conv_idx]
@@ -651,14 +655,16 @@ class ZO_Estim_MC(nn.Module):
         elif self.sample_method == 'bernoulli':         
             org_post_actv = post_actv.int()
 
-            if hasattr(configs.ZO_Estim, 'n_sample_distri'):
-                n_sample_distri = configs.ZO_Estim.n_sample_distri
-                if n_sample_distri == 'uniform':
-                    n_sample = self.n_sample / 42
-                elif n_sample_distri == 'dim':
-                    n_sample = int((self.n_sample * splited_block.block.conv[conv_idx].out_dimension / self.ZO_dimension))
-            else:
-                n_sample = self.n_sample
+            # if hasattr(configs.ZO_Estim, 'n_sample_distri'):
+            #     n_sample_distri = configs.ZO_Estim.n_sample_distri
+            #     if n_sample_distri == 'uniform':
+            #         n_sample = self.n_sample / 42
+            #     elif n_sample_distri == 'dim':
+            #         n_sample = int((self.n_sample * splited_block.block.conv[conv_idx].out_dimension / self.ZO_dimension))
+            # else:
+            #     n_sample = self.n_sample
+            
+            n_sample = self.n_sample
                   
             for i in range(n_sample):
                 if hasattr(configs.ZO_Estim, 'sync_batch_perturb') and configs.ZO_Estim.sync_batch_perturb:
@@ -866,46 +872,27 @@ class ZO_Estim_MC(nn.Module):
     # def get_break_ZO_grad(self):
     #     for i in range(len(self.trainable_splited_block_list)):
     #         splited_block = self.trainable_splited_block_list[i]
-    #         with torch.no_grad():
-    #             ZO_grad = self.get_block_actv_ZO_gradint(splited_block)
-            
-    #         if i>0:
-    #             detach_idx = self.trainable_splited_block_list[i-1].idx
+
+    #         if splited_block.block.q_add is not None:
+    #             scale_y = splited_block.block.q_add.scale_y
     #         else:
-    #             detach_idx = None
-    #         output = self.obj_fn(ending_idx=splited_block.idx, return_loss_reduction='no_loss', detach_idx=detach_idx)
-    #         # output.grad = ZO_grad
+    #             scale_y = splited_block.block.conv[-1].y_scale
+              
+    #         with torch.no_grad():
+    #             ZO_grad = self.get_block_actv_ZO_gradint(splited_block) * scale_y
+            
+    #         if i==0:
+    #             output = self.obj_fn(ending_idx=splited_block.idx+1, return_loss_reduction='no_loss') 
+    #         else:
+    #             output = self.obj_fn(starting_idx=self.trainable_splited_block_list[i-1].idx+1, ending_idx=splited_block.idx+1, input=output, return_loss_reduction='no_loss')
+            
     #         output.backward(ZO_grad)
+    #         output = output.detach()
         
-    #     _, loss = self.obj_fn(detach_idx=self.trainable_splited_block_list[-1].idx)
+    #     _, loss = self.obj_fn(starting_idx=self.trainable_splited_block_list[-1].idx+1, input=output)
     #     loss.backward()
         
-    #     return None
-
-    def get_break_ZO_grad(self):
-        for i in range(len(self.trainable_splited_block_list)):
-            splited_block = self.trainable_splited_block_list[i]
-
-            if splited_block.block.q_add is not None:
-                scale_y = splited_block.block.q_add.scale_y
-            else:
-                scale_y = splited_block.block.conv[-1].y_scale
-              
-            with torch.no_grad():
-                ZO_grad = self.get_block_actv_ZO_gradint(splited_block) * scale_y
-            
-            if i==0:
-                output = self.obj_fn(ending_idx=splited_block.idx+1, return_loss_reduction='no_loss') 
-            else:
-                output = self.obj_fn(starting_idx=self.trainable_splited_block_list[i-1].idx+1, ending_idx=splited_block.idx+1, input=output, return_loss_reduction='no_loss')
-            
-            output.backward(ZO_grad)
-            output = output.detach()
-        
-        _, loss = self.obj_fn(starting_idx=self.trainable_splited_block_list[-1].idx+1, input=output)
-        loss.backward()
-        
-        return None    
+    #     return None    
     
     def get_single_param_ZO_gradient(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method, p_scale=False):
         param_dim = param.numel()
@@ -1053,6 +1040,19 @@ class ZO_Estim_MC(nn.Module):
                     param_ZO_grad = param_ZO_grad / configs.ZO_Estim.scale
                 else:
                     raise NotImplementedError(f'Unknown {configs.ZO_Estim.scale}')
+
+            # if hasattr(configs.ZO_Estim, 'scale'):
+            #     batch_sz = block_in.shape[0]
+            #     if configs.ZO_Estim.scale == 'sqrt-dim':
+            #         # param_ZO_grad = param_ZO_grad * math.sqrt(n_sample / (param.numel() - 1))
+            #         # param_ZO_grad = param_ZO_grad * math.sqrt(n_sample / (self.n_sample + param.numel() + 1))
+            #         param_ZO_grad = param_ZO_grad * math.sqrt((n_sample*batch_sz) / (n_sample*batch_sz + torch.sum(mask).item() - 1))
+            #     elif configs.ZO_Estim.scale == 'dim':
+            #         param_ZO_grad = param_ZO_grad * ((n_sample*batch_sz) / (n_sample*batch_sz + torch.sum(mask).item() - 1))
+            #     elif type(configs.ZO_Estim.scale) is int:
+            #         param_ZO_grad = param_ZO_grad / configs.ZO_Estim.scale
+            #     else:
+            #         raise NotImplementedError(f'Unknown {configs.ZO_Estim.scale}')
         else:
             return NotImplementedError('sample method not implemented yet')
 
@@ -1060,6 +1060,144 @@ class ZO_Estim_MC(nn.Module):
         
         return param_ZO_grad
     
+    
+    def get_single_param_ZO_gradient_independent(self, block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method, p_scale=False):
+        param_dim = param.numel()
+        param_shape = param.shape
+        
+        fp_sigma = sigma
+
+        # if type(sigma) is not int:
+        #     L = self.n_sample
+        #     d = param.data.numel()
+        #     sigma = sigma * math.sqrt(4*L/(L+d-1)) / trainable_layer.scale_w.view(-1, 1, 1, 1)
+        #     sigma = sigma.round()
+        
+        if type(sigma) is not int:
+            if param.dim() == 4:
+                sigma = sigma / trainable_layer.scale_w.view(-1, 1, 1, 1)
+                sigma = sigma.round()
+            elif param.dim() == 1:
+                sigma = sigma / trainable_layer.scale_x / trainable_layer.scale_w
+                sigma = sigma.round()
+            
+                
+        param_ZO_grad = torch.zeros_like(param, device=self.device)
+        loss_diff = 0
+
+        if configs.train_config.ZO_grad_prune_ratio is not None:
+            ZO_grad_prune_ratio = configs.train_config.ZO_grad_prune_ratio
+            mask = torch.zeros_like(param, dtype=torch.bool)
+
+            ### Output actv magnitude top-k sparsity, batch-wise
+            if configs.train_config.prune_method == 'top-k-param':
+                raise NotImplementedError('top-k-param not implemented yet')
+            
+            elif configs.train_config.prune_method == 'random-k-param':
+                ratio = 1.0-ZO_grad_prune_ratio
+                mask = torch.bernoulli(ratio*torch.ones_like(param))
+            
+            ### Output actv magnitude top-k sparsity, channel-wise
+            elif configs.train_config.prune_method == 'top-k-channel':
+                raise NotImplementedError('top-k-channel not implemented yet')
+            
+            elif configs.train_config.prune_method == 'random-k-channel':
+                raise NotImplementedError('random-k-channel not implemented yet')
+            
+        else:
+            mask = torch.ones_like(param)
+        
+        if param.dim() == 4:
+            trainable_layer.weight_mask = mask
+        elif param.dim() == 1:
+            trainable_layer.bias_mask = mask
+
+        if sample_method == 'coord_basis':
+            raise NotImplementedError('coord_basis not implemented yet')
+        elif sample_method == 'bernoulli':
+            old_param = param.clone()
+            if hasattr(configs.ZO_Estim, 'n_sample_distri'):
+                n_sample_distri = configs.ZO_Estim.n_sample_distri
+                if n_sample_distri == 'uniform':
+                    n_sample = self.n_sample / 42
+                elif n_sample_distri == 'dim':
+                    n_sample = int(self.n_sample * param_dim / self.ZO_dimension)
+                elif n_sample_distri == 'half':
+                    n_sample = int(self.n_sample / 2)
+            else:
+                n_sample = self.n_sample
+            
+            batch_sz = block_in.shape[0]
+            for batch_idx in range(batch_sz):
+                inde_input = block_in[batch_idx].unsqueeze(0)
+                for i in range(n_sample):
+                    u = self._sample_unit_sphere_quantized(param.shape, sample_method, self.device) * mask
+                    # u = u / math.sqrt((self.n_sample + u.numel() - 1) / 4 / self.n_sample)
+                    # pos
+                    param.add_(u * sigma)
+                    if type(trainable_layer) == QuantizedConv2d:
+                        w_bit = trainable_layer.w_bit
+                        if param.dim() == 4:
+                            param.data = param.data.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
+                        elif param.dim() == 1:
+                            param.data = param.data.clamp(- 2 ** (4*w_bit - 1), 2 ** (4*w_bit - 1) - 1)
+                    _, pos_loss = self.obj_fn(starting_idx=block_idx, input=inde_input, return_loss_reduction='single_'+str(batch_idx))
+                    param.copy_(old_param)
+
+                    # neg
+                    if estimate_method == 'forward':
+                        # loss_diff += (pos_loss - old_loss) / fp_sigma / self.n_sample
+                        param_ZO_grad += (pos_loss - old_loss)  * u
+                    elif estimate_method == 'antithetic':
+                        param.sub_(u * sigma)
+                        if type(trainable_layer) == QuantizedConv2d:
+                            w_bit = trainable_layer.w_bit
+                            if param.dim() == 4:
+                                param.data = param.data.clamp(- 2 ** (w_bit - 1), 2 ** (w_bit - 1) - 1)
+                            elif param.dim() == 1:
+                                param.data = param.data.clamp(- 2 ** (4*w_bit - 1), 2 ** (4*w_bit - 1) - 1)
+                        _, neg_loss = self.obj_fn(starting_idx=block_idx, input=inde_input, return_loss_reduction='single_'+str(batch_idx))
+                        param.copy_(old_param)
+
+                        # loss_diff += (pos_loss -  neg_loss) / 2 / sigma / self.n_sample
+                        # loss_diff += (pos_loss - 2*old_loss + neg_loss) / fp_sigma**2 / self.n_sample
+                        param_ZO_grad += (pos_loss - neg_loss) / 2 * u
+            
+            ### single sample, the loss was not averaged by batch_sz
+            param_ZO_grad = param_ZO_grad / batch_sz
+            
+            if type(sigma) is int:
+                param_ZO_grad = param_ZO_grad / sigma
+            else: 
+                # param_ZO_grad = param_ZO_grad * torch.where(sigma != 0, 1 / sigma, sigma)
+                ### scale to grad_w_bar
+                # param_ZO_grad = param_ZO_grad / sigma
+                ### scale to grad_w_bar via chains rule
+                param_ZO_grad = param_ZO_grad / fp_sigma
+                if param.dim() == 4:
+                    param_ZO_grad = param_ZO_grad * trainable_layer.scale_w.view(-1, 1, 1, 1)
+                elif param.dim() == 1:
+                    param_ZO_grad = param_ZO_grad * trainable_layer.scale_x * trainable_layer.scale_w
+
+            ### divided by total number of samples
+            # param_ZO_grad = param_ZO_grad / n_sample
+            param_ZO_grad = param_ZO_grad / (batch_sz * n_sample)
+
+            if hasattr(configs.ZO_Estim, 'scale'):
+                if configs.ZO_Estim.scale == 'sqrt-dim':
+                    param_ZO_grad = param_ZO_grad * math.sqrt((n_sample*batch_sz) / (n_sample*batch_sz + torch.sum(mask).item() - 1))
+                elif configs.ZO_Estim.scale == 'dim':
+                    param_ZO_grad = param_ZO_grad * ((n_sample*batch_sz) / (n_sample*batch_sz + torch.sum(mask).item() - 1))
+                elif type(configs.ZO_Estim.scale) is int:
+                    param_ZO_grad = param_ZO_grad / configs.ZO_Estim.scale
+                else:
+                    raise NotImplementedError(f'Unknown {configs.ZO_Estim.scale}')
+        else:
+            return NotImplementedError('sample method not implemented yet')
+
+        param_ZO_grad = param_ZO_grad.view(param_shape)
+        
+        return param_ZO_grad
     
     def get_weight_and_bias_ZO_gradient(self, block_idx, trainable_layer, block_in, old_loss):
         dimension = trainable_layer.weight.numel() + trainable_layer.bias.numel() 
@@ -1246,9 +1384,15 @@ class ZO_Estim_MC(nn.Module):
                     # if trainable_param_name == 'scale_w':
                     #     self.get_scale_w_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
                     # else:
-                    param_ZO_grad = self.get_single_param_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
+                    if hasattr(configs.ZO_Estim, 'independent_wp') and configs.ZO_Estim.independent_wp is True:
+                        param_ZO_grad = self.get_single_param_ZO_gradient_independent(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
+                    else: 
+                        param_ZO_grad = self.get_single_param_ZO_gradient(block_idx, trainable_layer, param, block_in, old_loss, sigma, estimate_method, sample_method)
                     
-                    param.grad = param_ZO_grad
+                    if param.grad is None:
+                        param.grad = param_ZO_grad
+                    else:
+                        param.grad += param_ZO_grad
 
         return None
     
@@ -1339,12 +1483,16 @@ class ZO_Estim_MC(nn.Module):
                         ZO_grad, pre_activ, mask = self.get_layer_actv_ZO_gradint(splited_block, conv_idx, old_loss_vec, local_backward_args=True)
                         grad_x, grad_w, grad_bias = splited_block.block.conv[conv_idx].local_backward(input=pre_activ, grad_output=ZO_grad, binary_mask=mask.bool())
                         
-                        grad_w = grad_w / 10
-                        grad_bias = grad_bias / 10
+                        # grad_w = grad_w / 10
+                        # grad_bias = grad_bias / 10
                         
                         if configs.train_config.layerwise_update is None:
-                            splited_block.block.conv[conv_idx].weight.grad = grad_w
-                            splited_block.block.conv[conv_idx].bias.grad = grad_bias
+                            if splited_block.block.conv[conv_idx].weight.grad is None:
+                                splited_block.block.conv[conv_idx].weight.grad = grad_w
+                                splited_block.block.conv[conv_idx].bias.grad = grad_bias
+                            else:
+                                splited_block.block.conv[conv_idx].weight.grad += grad_w
+                                splited_block.block.conv[conv_idx].bias.grad += grad_bias
                             # splited_block.block.conv[conv_idx].out_grad = ZO_grad
                     else:
                         raise NotImplementedError
@@ -1632,6 +1780,13 @@ class ZO_Estim_MC(nn.Module):
         for name, param in self.model.named_parameters():
             if any(keyword in name for keyword in self.trainable_layer_list):
                 param.grad = torch.zeros_like(param)
+                
+        if isinstance(self.sigma, dict):
+            weight_sigma = self.sigma['weight']
+            bias_sigma = self.sigma['bias']
+        else:
+            weight_sigma = self.sigma
+            bias_sigma = self.sigma
         
         if self.sample_method == 'coord_basis':
             raise NotImplementedError
@@ -1651,21 +1806,16 @@ class ZO_Estim_MC(nn.Module):
                 #     if any(keyword in name for keyword in self.trainable_layer_list):
                 #         u[name] = self._sample_unit_sphere_quantized(param.shape, self.sample_method, self.device)
                 
-                # if self.normalize_perturbation:
-                #     p_sigma = self.sigma / torch.linalg.vector_norm(torch.cat([splited_param.u.view(-1) for splited_param in self.splited_param_list]))
-                # else:
-                p_sigma = self.sigma
-                
                 ### Add perturbation to the parameter
                 # pos
                 for name, module in self.model.named_modules():
                     if any(keyword in name for keyword in self.trainable_layer_list):
-                        if type(p_sigma) is not int:
-                            module.weight.add_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
-                            module.bias.add_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round() )
+                        if type(weight_sigma) is not int:
+                            module.weight.add_(u[name+'.weight'] * (weight_sigma / module.scale_w.view(-1, 1, 1, 1)).round() )
+                            module.bias.add_(u[name+'.bias'] * (bias_sigma / module.scale_x / module.scale_w).round() )
                         else:
-                            module.weight.add_(u[name+'.weight'] * p_sigma)
-                            module.bias.add_(u[name+'.bias'] * p_sigma)
+                            module.weight.add_(u[name+'.weight'] * weight_sigma)
+                            module.bias.add_(u[name+'.bias'] * bias_sigma)
                         
                         module.weight.data = module.weight.data.clamp(- 2 ** (module.w_bit - 1), 2 ** (module.w_bit - 1) - 1)
                         module.bias.data = module.bias.data.clamp(- 2 ** (4*module.w_bit - 1), 2 ** (4*module.w_bit - 1) - 1)
@@ -1685,12 +1835,12 @@ class ZO_Estim_MC(nn.Module):
                 if self.estimate_method == 'forward':
                     for name, module in self.model.named_modules():
                         if any(keyword in name for keyword in self.trainable_layer_list):
-                            if type(p_sigma) is not int:
-                                module.weight.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
-                                module.bias.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
+                            if type(weight_sigma) is not int:
+                                module.weight.grad.add_((pos_loss - old_loss) / weight_sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
+                                module.bias.grad.add_((pos_loss - old_loss) / bias_sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
                             else:
-                                module.weight.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.weight'])
-                                module.bias.grad.add_((pos_loss - old_loss) / self.sigma / n_sample * u[name+'.bias'])
+                                module.weight.grad.add_((pos_loss - old_loss) / weight_sigma / n_sample * u[name+'.weight'])
+                                module.bias.grad.add_((pos_loss - old_loss) / bias_sigma / n_sample * u[name+'.bias'])
                             
                     # for name, param in self.model.named_parameters():
                     #     if any(keyword in name for keyword in self.trainable_layer_list):
@@ -1699,12 +1849,12 @@ class ZO_Estim_MC(nn.Module):
                 elif self.estimate_method == 'antithetic':
                     for name, module in self.model.named_modules():
                         if any(keyword in name for keyword in self.trainable_layer_list):
-                            if type(p_sigma) is not int:
-                                module.weight.sub_(u[name+'.weight'] * (p_sigma / module.scale_w.view(-1, 1, 1, 1)).round())
-                                module.bias.sub_(u[name+'.bias'] * (p_sigma / module.scale_x / module.scale_w).round())
+                            if type(weight_sigma) is not int:
+                                module.weight.sub_(u[name+'.weight'] * (weight_sigma / module.scale_w.view(-1, 1, 1, 1)).round())
+                                module.bias.sub_(u[name+'.bias'] * (bias_sigma / module.scale_x / module.scale_w).round())
                             else:
-                                module.weight.sub_(u[name+'.weight'] * p_sigma)
-                                module.bias.sub_(u[name+'.bias'] * p_sigma)
+                                module.weight.sub_(u[name+'.weight'] * weight_sigma)
+                                module.bias.sub_(u[name+'.bias'] * bias_sigma)
                             
                             module.weight.data = module.weight.data.clamp(- 2 ** (module.w_bit - 1), 2 ** (module.w_bit - 1) - 1)
                             module.bias.data = module.bias.data.clamp(- 2 ** (4*module.w_bit - 1), 2 ** (4*module.w_bit - 1) - 1)
@@ -1720,12 +1870,12 @@ class ZO_Estim_MC(nn.Module):
                             module.weight.copy_(old_param[name+'.weight'])
                             module.bias.copy_(old_param[name+'.bias'])
 
-                            if type(p_sigma) is not int:
-                                module.weight.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
-                                module.bias.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
+                            if type(weight_sigma) is not int:
+                                module.weight.grad.add_((pos_loss - neg_loss) / 2 / weight_sigma / n_sample * u[name+'.weight'] * module.scale_w.view(-1, 1, 1, 1))
+                                module.bias.grad.add_((pos_loss - neg_loss) / 2 / bias_sigma / n_sample * u[name+'.bias'] * module.scale_x * module.scale_w)
                             else:
-                                module.weight.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.weight'])
-                                module.bias.grad.add_((pos_loss - neg_loss) / 2 / self.sigma / n_sample * u[name+'.bias'])
+                                module.weight.grad.add_((pos_loss - neg_loss) / 2 / weight_sigma / n_sample * u[name+'.weight'])
+                                module.bias.grad.add_((pos_loss - neg_loss) / 2 / bias_sigma / n_sample * u[name+'.bias'])
                     # for name, param in self.model.named_parameters():
                     #     if any(keyword in name for keyword in self.trainable_layer_list):
                     #         param.add_(u[name] * p_sigma)

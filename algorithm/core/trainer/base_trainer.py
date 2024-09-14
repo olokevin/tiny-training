@@ -17,7 +17,7 @@ __all__ = ['BaseTrainer']
 
 class BaseTrainer(object):
 
-    def __init__(self, model: nn.Module, data_loader, criterion, optimizer, lr_scheduler, ZO_Estim):
+    def __init__(self, model: nn.Module, data_loader, criterion, optimizer, lr_scheduler, ZO_Estim=None):
         self.model = model
         self.data_loader = data_loader
         self.criterion = criterion
@@ -92,8 +92,8 @@ class BaseTrainer(object):
 
     def run_training(self):
         val_info_dict = None
-        # val_info_dict = self.validate()
-        # logger.info(f'No adaptation: {val_info_dict}')
+        val_info_dict = self.validate()
+        logger.info(f'No adaptation: {val_info_dict}')
         for epoch in range(self.start_epoch, configs.run_config.n_epochs + configs.run_config.warmup_epochs):
             train_info_dict = self.train_one_epoch(epoch)
             if configs.run_config.iteration_decay == 0:

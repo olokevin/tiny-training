@@ -10,6 +10,7 @@ import numpy as np
 from robustbench.data import load_cifar10c
 from torch.utils.data import DataLoader, Subset, TensorDataset
 from torchvision import transforms
+from torchvision.datasets import ImageFolder
 from .cub2011 import Cub2011
 
 __all__ = ['build_dataset']
@@ -183,7 +184,7 @@ def build_dataset():
         dataset = {
             'train': CustomVisionDataset(Subset(dataset, tr_idxs), transform=ImageTransform()['train']),
             'val': CustomVisionDataset(Subset(dataset, val_idxs), transform=ImageTransform()['val']),
-            'test': CustomVisionDataset(Subset(dataset, test_idxs), transform=ImageTransform()['test']),
+            'test': CustomVisionDataset(Subset(dataset, test_idxs), transform=ImageTransform()['val']),
         } 
     
     else:

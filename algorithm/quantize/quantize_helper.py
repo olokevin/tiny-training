@@ -47,6 +47,12 @@ def _append_flatten(model_q):
 #     model_q[-2].y_scale = 1  # skipped actually
 #     return model_q
 
+def keep_quantized_head(model_q):
+    assert isinstance(model_q, nn.Sequential)
+    if not isinstance(model_q[-1], nn.Flatten):
+        model_q = _append_flatten(model_q)
+    return model_q
+
 def create_scaled_head(model_q, norm_feat=False):
     assert isinstance(model_q, nn.Sequential)
     if not isinstance(model_q[-1], nn.Flatten):

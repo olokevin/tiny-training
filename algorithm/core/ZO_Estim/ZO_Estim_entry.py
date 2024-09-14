@@ -141,6 +141,10 @@ def build_obj_fn_classifier_layerwise(data, target, model, criterion):
             return y, loss
         elif return_loss_reduction == 'no_loss':
             return y
+        elif 'single' in return_loss_reduction:
+            batch_idx = int(return_loss_reduction.split('_')[-1])
+            criterion.reduction = 'mean'
+            return y, criterion(y, target[batch_idx].unsqueeze(0))
         else:
             raise NotImplementedError(f'Unknown {return_loss_reduction}')
     

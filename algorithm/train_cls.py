@@ -124,6 +124,11 @@ def main():
    
     model = build_mcu_model()
     
+    # block_0_list = list(model[1][0].conv)
+    # block_0_list.insert(0, model[0])
+    # model[1][0].conv = torch.nn.Sequential(*block_0_list)
+    # model[0] = torch.nn.Identity()
+    
     if configs.data_provider.load_model_path is not None:
         checkpoint = torch.load(configs.data_provider.load_model_path, map_location='cpu')
         if hasattr(model, 'module'):
@@ -165,18 +170,24 @@ def main():
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = build_optimizer(model)
     lr_scheduler = build_lr_scheduler(optimizer, len(data_loader['train']))
-
-    if configs.ZO_Estim.en is True:
-        if hasattr(configs, 'layer_selection'):
-            ### create temp config 
-            layer_selection_config = configs.layer_selection
-            
-            images, labels = next(iter(data_loader['train']))
-            images, labels = images.cuda(), labels.cuda()
-            obj_fn = build_obj_fn(layer_selection_config.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
-            
+    
+    """
+        Layer Selection
+    """
+    if hasattr(configs, 'layer_selection'):
+        ### create temp config 
+        layer_selection_config = configs.layer_selection
+        
+        images, labels = next(iter(data_loader['train']))
+        images, labels = images.cuda(), labels.cuda()
+        obj_fn = build_obj_fn(layer_selection_config.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
+        
+        from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
+        import heapq
+        
+        layer_score_dict = {}
+        if layer_selection_config.layer_selection_method == 'ZO-RGN':
             LS_ZO_Estim = build_ZO_Estim(layer_selection_config, model=model, obj_fn=obj_fn)
-            
             optimizer.zero_grad()
             with torch.no_grad():
                 output = model(images)
@@ -184,33 +195,90 @@ def main():
 
                 LS_ZO_Estim.update_obj_fn(obj_fn)
                 LS_ZO_Estim.estimate_grad(old_loss=loss)
-            
-            from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
-            import heapq
-            
-            layer_score_dict = {}
-            if layer_selection_config.layer_selection_method == 'ZO-RGN':
-                for name, layer in model.named_modules():
-                    if name in LS_ZO_Estim.trainable_layer_list:
-                        G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
-                        if G_W_ratio > 255:
-                            G_W_ratio = 0
-                        layer_score_dict[name] = G_W_ratio
-            else:
-                raise NotImplementedError
-            
-            # Find the top 5 values
-            layer_selection_num = layer_selection_config.layer_selection_num
-            top_values = heapq.nlargest(layer_selection_num, layer_score_dict.values())
-            top_keys = [key for key, value in layer_score_dict.items() if value in top_values]
-            
-            logger.info(f'trainable_layer_list: {top_keys}')
-            
-            configs.ZO_Estim.trainable_layer_list = top_keys
+                
+            for name, layer in model.named_modules():
+                if name in LS_ZO_Estim.trainable_layer_list:
+                    G_W_ratio = torch.norm(layer.weight.grad / layer.scale_w.view(-1,1,1,1)) / torch.norm(layer.weight * layer.scale_w.view(-1,1,1,1))
+                    if G_W_ratio > 255:
+                        G_W_ratio = 0
+                    layer_score_dict[name] = G_W_ratio
+        
+        elif layer_selection_config.layer_selection_method == 'test-and-pick':
+            LS_ZO_Estim = build_ZO_Estim(layer_selection_config, model=model, obj_fn=obj_fn)
+            test_trainer = ClassificationTrainer(model, data_loader, criterion, optimizer, lr_scheduler)
+            val_info_dict = test_trainer.validate()
+            no_adapt_acc = val_info_dict['val/top1']
+            for block_idx in range(14):
+                trainable_layer_name = f'1.{block_idx}.conv.0'
+                for name, module in model.named_modules():
+                    if name == trainable_layer_name:
+                        trainable_layer = module
+                        break
+                
+                LS_ZO_Estim.trainable_layer_list = [trainable_layer_name,]
+                old_weight = trainable_layer.weight.clone().detach()
+                old_bias = trainable_layer.bias.clone().detach()
+                
+                optimizer.zero_grad()
+                with torch.no_grad():
+                    output = model(images)
+                    loss = criterion(output, labels)
+
+                    LS_ZO_Estim.update_obj_fn(obj_fn)
+                    LS_ZO_Estim.estimate_grad(old_loss=loss)
+                
+                    trainable_layer.weight.data.sub_(0.01 * trainable_layer.weight.grad.data / trainable_layer.scale_w.view(-1,1,1,1) ** 2)
+                    trainable_layer.bias.data.sub_(0.01 * trainable_layer.bias.grad.data / (trainable_layer.scale_x * trainable_layer.scale_w) ** 2 ) 
+                    
+                    ### need clamp
+                    trainable_layer.bias.data = trainable_layer.bias.data.round().clamp(- 2 ** (4*trainable_layer.w_bit - 1), 2 ** (4*trainable_layer.w_bit - 1) - 1)
+                    trainable_layer.weight.data = trainable_layer.weight.data.round().clamp(- 2 ** (trainable_layer.w_bit - 1), 2 ** (trainable_layer.w_bit - 1) - 1)
+                    
+                    val_info_dict = test_trainer.validate()
+                    
+                    trainable_layer.weight.copy_(old_weight)
+                    trainable_layer.bias.copy_(old_bias)
+                
+                adapt_acc = val_info_dict['val/top1']
+                layer_score_dict[trainable_layer_name] = adapt_acc - no_adapt_acc
+                
         else:
-            images, labels = next(iter(data_loader['train']))
-            images, labels = images.cuda(), labels.cuda()
-            obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
+            raise NotImplementedError
+        
+        # Find the top values
+        layer_selection_num = layer_selection_config.layer_selection_num
+        top_values = heapq.nlargest(layer_selection_num, layer_score_dict.values())
+        top_keys = [key for key, value in layer_score_dict.items() if value in top_values]
+        
+        logger.info(f'trainable_layer_list: {top_keys}')
+        
+        manual_weight_idx = ''
+        weight_update_ratio = ''
+        conv_idx = 0
+        for name, layer in model.named_modules():
+            if isinstance(layer, QuantizedConv2d):
+                if name in top_keys:
+                    manual_weight_idx = manual_weight_idx + str(conv_idx) + '-'
+                    weight_update_ratio = weight_update_ratio + '1-'
+                    
+                conv_idx += 1
+        manual_weight_idx = manual_weight_idx[:-1]
+        weight_update_ratio = weight_update_ratio[:-1]
+        
+        logger.info(f'manual_weight_idx: {manual_weight_idx}')
+        logger.info(f'weight_update_ratio: {weight_update_ratio}')
+        
+        if configs.ZO_Estim.en is True:
+            configs.ZO_Estim.trainable_layer_list = top_keys
+        
+        if configs.backward_config.enable_backward_config:
+            configs.backward_config.manual_weight_idx = manual_weight_idx
+            configs.backward_config.weight_update_ratio = weight_update_ratio
+
+    if configs.ZO_Estim.en is True:
+        images, labels = next(iter(data_loader['val']))
+        images, labels = images.cuda(), labels.cuda()
+        obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
             
         # obj_fn = None
         ZO_Estim = build_ZO_Estim(configs.ZO_Estim, model=model, obj_fn=obj_fn)

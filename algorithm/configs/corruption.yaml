@@ -1,6 +1,7 @@
 resume: 0
-wandb: 1
-project: CIFAR_C_abla_recipe
+# wandb: 1
+# project: CIFART_C_MCUTrain_FP32
+# project: CIFAR_C_abla_recipe
 # project: CIFAR_C_WP_34567
 
 data_provider:
@@ -34,6 +35,8 @@ data_provider:
   # corruption_type: [gaussian_noise, impulse_noise, shot_noise, fog, frost, snow, defocus_blur, elastic_transform, brightness, contrast, defocus_blur]
   # corruption_type: [gaussian_noise, shot_noise, impulse_noise, speckle_noise, gaussian_blur, defocus_blur, glass_blur, motion_blur, zoom_blur, snow, frost, fog, brightness, contrast, elastic_transform, pixelate, jpeg_compression, saturate, spatter]
   load_model_path: './assets/mcunet_in1_cifar10.pth'
+  # load_model_path: './assets/mcunet_in1_cifar10_full.pth'
+  # load_model_path: '/home/yequan_zhao/Project/Edge/tiny-training/algorithm/runs/dataset/mcunet-5fps/ZO/20240907-224205-616520/checkpoint/ckpt.best.pth'
 
   # dataset: imagenet-c
   # root: '~/dataset'
@@ -59,23 +62,25 @@ run_config:
   # n_epochs: 1
   warmup_epochs: 5
   n_epochs: 45
+  # n_epochs: 5
   # n_epochs: 200
   # n_epochs: 2000
-  # n_epochs: 50000
+  # n_epochs: 12500
 
   ### no gradint accumulation
   # bs256_lr: 0.1
   bs256_lr: 0.01
   # bs256_lr: 0.001
-  # bs256_lr: 0.0001
+  # bs256_lr: 0.00001
 
   ### gradient accumulation setting. should use the corresponding lr of batch size 1 
+  # base_lr: 0.01
   # base_lr: 0.004
-  # grad_accumulation_steps: 1
+  # grad_accumulation_steps: 100
 
   # iteration_decay: 0
 
-  # eval_per_epochs: 1
+  eval_per_epochs: 1
 
   # optimizer
   # optimizer_name: sgd
@@ -91,22 +96,35 @@ run_config:
   # optimizer_name: sgd_scale_int
   optimizer_name: sgd_scale_int_nomom
 
+  # lr_schedule_name: cosine
+  # final_lr: 0.001
+
+  # lr_schedule_name: step
+  # lr_step_size: 50
+  # lr_step_gamma: 0.1
+
 net_config:
   net_name: mcunet-5fps
   # net_name: mbv2-w0.35
   # net_name: proxyless-w0.3
+
+  # mcu_head_type: keep
 
 backward_config:
   # quantize_gradient: 1
   # n_bit: 8
 
   ##### Full model
-  enable_backward_config: 0
+  # enable_backward_config: 0
 
   ##### cls-only
-  # enable_backward_config: 1
-  # n_bias_update: 0
-  # n_weight_update: 0
+  enable_backward_config: 1
+  n_bias_update: 0
+  n_weight_update: 0
+
+  ##### layer selection
+  # enable_backward_config: 1  
+  # n_bias_update: 42
 
   ########## FGVC datasets ##########
 
@@ -135,7 +153,7 @@ backward_config:
 
   ##### bias-only
   # enable_backward_config: 1 
-  # n_bias_update: 22
+  # n_bias_update: 42
   # n_weight_update: 0
 
   ########## Corruption datasets ##########
@@ -145,14 +163,17 @@ backward_config:
   ##### selected layers
   # enable_backward_config: 1  
   # n_bias_update: 42
-  # manual_weight_idx: 21-30-36
+  # # manual_weight_idx: 0-3-6-9
+  # # manual_weight_idx: 12-15-18-21
+  # # weight_update_ratio: 1-1-1-1
+  # manual_weight_idx: 33-36-39
   # weight_update_ratio: 1-1-1
 
   ##### selected layers
   # enable_backward_config: 1  
   # n_bias_update: 42
-  # manual_weight_idx: 9-15-21-30-33-36
-  # weight_update_ratio: 1-1-1-1-1-1
+  # manual_weight_idx: 9-12-15-18-21
+  # weight_update_ratio: 1-1-1-1-1
 
   ##### ZO-RGN selected 5 layers
   # enable_backward_config: 1  
@@ -246,8 +267,8 @@ ZO_Estim:
   # n_sample_distri: dim
   n_sample_distri: half
 
-  # scale: sqrt-dim
-  scale: dim
+  scale: sqrt-dim
+  # scale: dim
   # scale: 100
 
   # trainable_param_list: all
@@ -258,13 +279,15 @@ ZO_Estim:
   # trainable_param_list: ['bias', 'scale_y','zero_y','scale_w', 'gamma', 'beta']
   
   # trainable_layer_list: block-all
-  trainable_layer_list: layer-all
+  # trainable_layer_list: layer-all
   # trainable_layer_list: layer-first-20
   # trainable_layer_list: layer-last-30
 
   # trainable_layer_list: layer-selection
-  # trainable_layer_list: ['1.8.conv.0']
-  # trainable_layer_list: ['1.3.conv.0', '1.4.conv.0', '1.5.conv.0', '1.7.conv.0']
+  # trainable_layer_list: ['1.5.conv.0']
+  # trainable_layer_list: ['1.5.conv.0', '1.10.conv.0']
+  trainable_layer_list: ['1.5.conv.0',  '1.7.conv.0', '1.10.conv.0']
+  # trainable_layer_list: ['1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
   # trainable_layer_list: ['1.3.conv.0', '1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
   # trainable_layer_list: ['1.3.conv.0', '1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.9.conv.0']
   # trainable_layer_list: ['1.0.conv.0', '1.1.conv.0', '1.2.conv.0','1.3.conv.0', '1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
@@ -283,23 +306,26 @@ ZO_Estim:
   sample_method: bernoulli
   # sample_method: coord_basis
 
+  independent_wp: False
+  # independent_wp: True
+
   ############################## Layerwise Mixture Perturbation ##############################
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: mixture
+  obj_fn_type: classifier_layerwise
+  perturb_method: mixture
 
-  # split_block_number: 5
+  split_block_number: 5
 
-  # sigma: {
-  #   'weight': 1,
-  #   'bias': 100,
-  #   'actv': 10,
-  # }
-  # # sigma: 0.1
+  sigma: {
+    'weight': 1,
+    'bias': 100,
+    'actv': 5,
+  }
+  # sigma: 0.1
 
-  # perturb_before_round: 0
+  perturb_before_round: 0
 
-  # sync_batch_perturb: 0
-  # # sync_batch_perturb: 1
+  sync_batch_perturb: 0
+  # sync_batch_perturb: 1
 
   ############################## Layerwise Activation Perturbation ##############################
   # obj_fn_type: classifier_layerwise
@@ -313,32 +339,37 @@ ZO_Estim:
   # # sync_batch_perturb: 1
 
   ############################## Layerwise Param Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: param
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: param
 
   # sigma: {
   #   'weight': 1,
   #   'bias': 100,
   # }
 
-  sigma: 0.01
+  # # sigma: 0.01
 
-  param_update_method: None
-  # param_update_method: layerwise
-  # param_update_method: blockwise
-  # param_update_method: modelwise
+  # param_update_method: None
+  # # param_update_method: layerwise
+  # # param_update_method: blockwise
+  # # param_update_method: modelwise
 
   ############################## Modelwise Activation Perturbation ##############################
   # obj_fn_type: classifier
   # perturb_method: all_activation
 
-  # sigma: 1
+  # sigma: 5
   
   ############################## Modelwise Param Perturbation ##############################
   # obj_fn_type: classifier
   # perturb_method: all_param
 
-  # sigma: 0.1
+  # # sigma: {
+  # #   'weight': 1,
+  # #   'bias': 100,
+  # # }
+
+  # sigma: 0.01
 
   # param_update_method: None
 
@@ -371,7 +402,8 @@ ZO_Estim:
 ############################## Layer Selection ##############################
 ############################## Layer Selection ##############################
 # layer_selection:
-#   layer_selection_method: ZO-RGN
+#   # layer_selection_method: ZO-RGN
+#   layer_selection_method: test-and-pick
 #   layer_selection_N: 100
 #   layer_selection_Q: 10
 #   layer_selection_num: 5
@@ -382,31 +414,32 @@ ZO_Estim:
 #   # fc_bp: 'break_BP'
 
 #   name: ZO_Estim_MC
-#   n_sample: 10
+#   n_sample: 100
 #   signSGD: False
 
 #   # n_sample_distri: uniform
 #   # n_sample_distri: dim
+#   n_sample_distri: half
 
 #   scale: sqrt-dim
 #   # scale: dim
 #   # scale: 100
 
 #   # trainable_param_list: all
-#   # trainable_param_list: ['weight', 'bias']
-#   trainable_param_list: ['weight']
+#   trainable_param_list: ['weight', 'bias']
+#   # trainable_param_list: ['weight']
 #   # trainable_param_list: ['bias', 'scale_y','zero_y','scale_w', 'gamma', 'beta']
 
-#   # trainable_layer_list: layer-all
+#   trainable_layer_list: layer-all
 #   # trainable_layer_list: layer-first-24
 #   # trainable_layer_list: layer-last-21
   
 #   # trainable_layer_list: pw1-all
-#   trainable_layer_list: pw1-first-8
+#   # trainable_layer_list: pw1-first-8
 #   # trainable_layer_list: pw1-last-8
 
-#   # estimate_method: forward
-#   estimate_method: antithetic
+#   estimate_method: forward
+#   # estimate_method: antithetic
 
 #   # sample_method: uniform
 #   # sample_method: gaussian
@@ -417,14 +450,14 @@ ZO_Estim:
 #   # obj_fn_type: classifier_layerwise
 #   # perturb_method: mixture
 
-#   # split_block_number: 3
+#   # split_block_number: 6
 
-#   # # sigma: {
-#   # #   'weight': 1,
-#   # #   'bias': 100,
-#   # #   'actv': 1,
-#   # # }
-#   # sigma: 0.1
+#   # sigma: {
+#   #   'weight': 1,
+#   #   'bias': 100,
+#   #   'actv': 5,
+#   # }
+#   # # sigma: 0.1
 
 #   # perturb_before_round: 0
 
@@ -432,24 +465,24 @@ ZO_Estim:
 #   # # sync_batch_perturb: 1
 
 #   ############################## Layerwise Activation Perturbation ##############################
-#   obj_fn_type: classifier_layerwise
-#   perturb_method: activation
+#   # obj_fn_type: classifier_layerwise
+#   # perturb_method: activation
 
-#   sigma: 1
+#   # sigma: 5
 
-#   perturb_before_round: 0
+#   # perturb_before_round: 0
 
-#   sync_batch_perturb: 0
-#   # sync_batch_perturb: 1
+#   # sync_batch_perturb: 0
+#   # # sync_batch_perturb: 1
 
 #   ############################## Layerwise Param Perturbation ##############################
-#   # obj_fn_type: classifier_layerwise
-#   # perturb_method: param
+#   obj_fn_type: classifier_layerwise
+#   perturb_method: param
 
-#   # # sigma: {
-#   # #   'weight': 1,
-#   # #   'bias': 100,
-#   # # }
+#   sigma: {
+#     'weight': 1,
+#     'bias': 100,
+#   }
 
 #   # sigma: 0.1
 
