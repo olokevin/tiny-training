@@ -7,6 +7,7 @@ runs/
 temp/
 paper.ipynb
 mcunet/
+paper/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
