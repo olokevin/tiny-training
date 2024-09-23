@@ -177,17 +177,18 @@ def main():
     if hasattr(configs, 'layer_selection'):
         ### create temp config 
         layer_selection_config = configs.layer_selection
-        
         images, labels = next(iter(data_loader['train']))
         images, labels = images.cuda(), labels.cuda()
-        obj_fn = build_obj_fn(layer_selection_config.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
         
         from quantize.quantized_ops_diff import QuantizedConv2dDiff as QuantizedConv2d
         import heapq
         
         layer_score_dict = {}
         if layer_selection_config.layer_selection_method == 'ZO-RGN':
+            ### Use a new config
+            obj_fn = build_obj_fn(layer_selection_config.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
             LS_ZO_Estim = build_ZO_Estim(layer_selection_config, model=model, obj_fn=obj_fn)
+            
             optimizer.zero_grad()
             with torch.no_grad():
                 output = model(images)
@@ -204,7 +205,11 @@ def main():
                     layer_score_dict[name] = G_W_ratio
         
         elif layer_selection_config.layer_selection_method == 'test-and-pick':
-            LS_ZO_Estim = build_ZO_Estim(layer_selection_config, model=model, obj_fn=obj_fn)
+            ### use ZO_Estim config
+            
+            obj_fn = build_obj_fn(configs.ZO_Estim.obj_fn_type, data=images, target=labels, model=model, criterion=criterion)
+            LS_ZO_Estim = build_ZO_Estim(configs.ZO_Estim, model=model, obj_fn=obj_fn)
+            
             test_trainer = ClassificationTrainer(model, data_loader, criterion, optimizer, lr_scheduler)
             val_info_dict = test_trainer.validate()
             no_adapt_acc = val_info_dict['val/top1']
