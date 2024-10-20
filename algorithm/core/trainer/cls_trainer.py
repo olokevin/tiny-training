@@ -210,45 +210,47 @@ class ClassificationTrainer(BaseTrainer):
                     ZO_grad_list.append(layer.ZO_grad.view(-1))
                     print(f'{F.cosine_similarity(layer.FO_grad.view(-1), layer.ZO_grad.view(-1), dim=0)}')
             
-            print('===== No gradient norm scaling =====')
             print('layer ZO/FO norm ratio')
             for layer in self.model.modules():
                 if isinstance(layer, QuantizedConv2d):
                     print(f'{torch.linalg.norm(layer.ZO_grad.view(-1)) / torch.linalg.norm(layer.FO_grad.view(-1))}')
             
+            print('===== No gradient norm scaling =====')
             print('layer MSE')
             for layer in self.model.modules():
                 if isinstance(layer, QuantizedConv2d):
                     print(f'{torch.linalg.norm(layer.ZO_grad.view(-1) - layer.FO_grad.view(-1)) ** 2}')
             
-            print('===== Scale by √d =====')
-            print('layer ZO/FO norm ratio')
-            for layer in self.model.modules():
-                if isinstance(layer, QuantizedConv2d):
-                    # scale = math.sqrt(self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() - 1))
-                    scale = math.sqrt((self.ZO_Estim.n_sample * configs.data_provider.base_batch_size) / (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size + layer.weight.numel() - 1))
-                    print(f'{torch.linalg.norm(layer.ZO_grad.view(-1) * scale) / torch.linalg.norm(layer.FO_grad.view(-1))}')
-            
+            print('===== Scale by √d =====')            
             print('layer MSE')
             for layer in self.model.modules():
                 if isinstance(layer, QuantizedConv2d):
                     # scale = math.sqrt(self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() - 1))
-                    scale = math.sqrt((self.ZO_Estim.n_sample * configs.data_provider.base_batch_size) / (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size + layer.weight.numel() - 1))
+                    if self.ZO_Estim.perturb_method == 'activation':
+                        dimension = layer.out_dimension
+                    elif self.ZO_Estim.perturb_method == 'param':
+                        dimension = layer.weight.numel()
+                    elif self.ZO_Estim.perturb_method == 'all_activation':
+                        dimension = self.ZO_Estim.ZO_dimension
+                    elif self.ZO_Estim.perturb_method == 'all_param':
+                        dimension = self.ZO_Estim.ZO_dimension
+                    scale = math.sqrt((self.ZO_Estim.n_sample * configs.data_provider.base_batch_size) / (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size + dimension - 1))
                     print(f'{torch.linalg.norm(layer.ZO_grad.view(-1) * scale - layer.FO_grad.view(-1)) ** 2}')
           
             print('===== Scale by d =====')
-            print('layer ZO/FO norm ratio')
-            for layer in self.model.modules():
-                if isinstance(layer, QuantizedConv2d):
-                    # scale = self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() - 1)
-                    scale = (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size) / (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size + layer.weight.numel() - 1)
-                    print(f'{torch.linalg.norm(layer.ZO_grad.view(-1) * scale) / torch.linalg.norm(layer.FO_grad.view(-1))}')
-            
             print('layer MSE')
             for layer in self.model.modules():
                 if isinstance(layer, QuantizedConv2d):
                     # scale = self.ZO_Estim.n_sample / (self.ZO_Estim.n_sample + layer.weight.numel() - 1)
-                    scale = (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size) / (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size + layer.weight.numel() - 1)
+                    if self.ZO_Estim.perturb_method == 'activation':
+                        dimension = layer.out_dimension
+                    elif self.ZO_Estim.perturb_method == 'param':
+                        dimension = layer.weight.numel()
+                    elif self.ZO_Estim.perturb_method == 'all_activation':
+                        dimension = self.ZO_Estim.ZO_dimension
+                    elif self.ZO_Estim.perturb_method == 'all_param':
+                        dimension = self.ZO_Estim.ZO_dimension
+                    scale = (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size) / (self.ZO_Estim.n_sample * configs.data_provider.base_batch_size + dimension - 1)
                     print(f'{torch.linalg.norm(layer.ZO_grad.view(-1) * scale - layer.FO_grad.view(-1)) ** 2}')
             
             FO_grad_vec = torch.cat(FO_grad_list)
