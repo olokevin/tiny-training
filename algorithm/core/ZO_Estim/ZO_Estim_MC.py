@@ -21,6 +21,29 @@ from ..utils.logging import logger
 DEBUG = None
 # DEBUG = True
 
+# EN_XOR_RAND = None
+EN_XOR_RAND = True
+
+class XORRand:
+    def __init__(self, seed):
+        self.seed = seed
+
+    def __call__(self):
+        seed = self.seed
+        
+        seed ^= seed << 13
+        seed ^= seed >> 17
+        seed ^= seed << 5
+        
+        self.seed = seed
+        return seed
+
+    def get_rng_state(self):
+        return self.seed
+
+    def manual_seed(self, seed):
+        self.seed = seed
+
 class ZO_Estim_MC(nn.Module):
     def __init__(
         self,
@@ -189,6 +212,10 @@ class ZO_Estim_MC(nn.Module):
         if self.sample_method == 'coord_basis':
             self.n_sample = self.ZO_dimension
         
+        self.set_seed = configs.ZO_Estim.set_seed
+        if self.set_seed == 'xorshift':
+            self.xorshift_rand = XORRand(seed=torch.randint(low=1,high=2**31,size=(1,), dtype=torch.uint32).item())
+        
         self.forward_counter = 0
 
         self.mask = None
@@ -246,22 +273,32 @@ class ZO_Estim_MC(nn.Module):
         
         return sample
 
-    def _sample_unit_sphere_quantized(self, shape, sample_method, device, seed=None):
-
-        if seed is not None:
-            # Save the current random state
-            current_random_state = torch.get_rng_state()
-            # Set the new seed
-            torch.manual_seed(seed)
+    def _sample_unit_sphere_quantized(self, shape, sample_method, device):
+        # if seed is not None:
+        #     # Save the current random state
+        #     current_random_state = torch.get_rng_state()
+        #     # Set the new seed
+        #     torch.manual_seed(seed)
         
         if sample_method == 'bernoulli':
-            sample = torch.ones(shape, device=device) - 2*torch.bernoulli(0.5*torch.ones(shape, device=device))
+            if self.set_seed == 'xorshift':
+                # random_numbers = torch.tensor([self.xorshift_rand() for _ in range(torch.prod(torch.tensor(shape)))], device=device)
+                # lsb = random_numbers & 1
+                # sample = 1 - 2 * lsb.float()
+                # sample = sample.view(shape)
+    
+                sample = torch.ones(shape, device=device).view(-1)
+                for i in range(sample.numel()):
+                    sample[i] = 1 - 2*(self.xorshift_rand() & 1)
+                sample = sample.view(shape)
+            else:
+                sample = torch.ones(shape, device=device) - 2*torch.bernoulli(0.5*torch.ones(shape, device=device))
         else:
             raise NotImplementedError('Unlnown sample method', self.sample_method)
         
-        if seed is not None:
-            # Restore the original random state
-            torch.set_rng_state(current_random_state)
+        # if seed is not None:
+        #     # Restore the original random state
+        #     torch.set_rng_state(current_random_state)
         
         return sample
 
