@@ -319,22 +319,22 @@ ZO_Estim:
   set_seed: None
 
   ############################## Layerwise Mixture Perturbation ##############################
-  # obj_fn_type: classifier_layerwise
-  # perturb_method: mixture
+  obj_fn_type: classifier_layerwise
+  perturb_method: mixture
 
-  # split_block_number: 4
+  split_block_number: 4
 
-  # sigma: {
-  #   'weight': 1,
-  #   'bias': 100,
-  #   'actv': 5,
-  # }
-  # # sigma: 0.1
+  sigma: {
+    'weight': 1,
+    'bias': 100,
+    'actv': 5,
+  }
+  # sigma: 0.1
 
-  # perturb_before_round: 0
+  perturb_before_round: 0
 
-  # sync_batch_perturb: 0
-  # # sync_batch_perturb: 1
+  sync_batch_perturb: 0
+  # sync_batch_perturb: 1
 
   ############################## Layerwise Activation Perturbation ##############################
   # obj_fn_type: classifier_layerwise
@@ -348,20 +348,20 @@ ZO_Estim:
   # # sync_batch_perturb: 1
 
   ############################## Layerwise Param Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: param
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: param
 
-  sigma: {
-    'weight': 1,
-    'bias': 100,
-  }
+  # sigma: {
+  #   'weight': 1,
+  #   'bias': 100,
+  # }
 
-  # sigma: 0.01
+  # # sigma: 0.01
 
-  param_update_method: None
-  # param_update_method: layerwise
-  # param_update_method: blockwise
-  # param_update_method: modelwise
+  # param_update_method: None
+  # # param_update_method: layerwise
+  # # param_update_method: blockwise
+  # # param_update_method: modelwise
 
   ############################## Modelwise Activation Perturbation ##############################
   # obj_fn_type: classifier

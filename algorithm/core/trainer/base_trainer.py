@@ -91,9 +91,10 @@ class BaseTrainer(object):
         raise NotImplementedError
 
     def run_training(self):
-        val_info_dict = None
-        val_info_dict = self.validate()
-        logger.info(f'No adaptation: {val_info_dict}')
+        if 'test' in self.data_loader:
+            val_info_dict = self.validate(data_set='test')
+            logger.info(f'No adaptation: {val_info_dict}')
+            
         for epoch in range(self.start_epoch, configs.run_config.n_epochs + configs.run_config.warmup_epochs):
             train_info_dict = self.train_one_epoch(epoch)
             if configs.run_config.iteration_decay == 0:
@@ -133,7 +134,7 @@ class BaseTrainer(object):
             else:
                 self.model.load_state_dict(checkpoint['state_dict'])
             
-            test_info_dict = self.validate()
+            test_info_dict = self.validate(data_set='test')
             logger.info(f'Test on early stop best model: {test_info_dict}')
             if configs.wandb:
                 wandb.log(f'Test on early stop best model: {test_info_dict}')

@@ -35,7 +35,7 @@ def bwd_hook_save_grad(module, grad_input, grad_output):
     module.out_grad = grad_output[0].detach().clone()
 
 class ClassificationTrainer(BaseTrainer):
-    def validate(self):
+    def validate(self, data_set='val'):
         self.model.eval()
         val_criterion = self.criterion  # torch.nn.CrossEntropyLoss()
 
@@ -43,10 +43,10 @@ class ClassificationTrainer(BaseTrainer):
         val_top1 = DistributedMetric('val_top1')
 
         with torch.no_grad():
-            with tqdm(total=len(self.data_loader['val']),
+            with tqdm(total=len(self.data_loader[data_set]),
                       desc='Validate',
                       disable=dist.rank() > 0 or configs.ray_tune) as t:
-                for images, labels in self.data_loader['val']:
+                for images, labels in self.data_loader[data_set]:
                     images, labels = images.cuda(), labels.cuda()
                     # compute output
                     output = self.model(images)
