@@ -756,13 +756,12 @@ class ZO_Estim_MC(nn.Module):
             ZO_grad = ZO_grad * splited_block.block.conv[conv_idx].scale_y
         
         ### ZO gradient scale adjustment
-        if hasattr(configs.ZO_Estim, 'scale'):
+        if hasattr(configs.ZO_Estim, 'scale') and torch.sum(mask).item() > 0:
             if configs.ZO_Estim.scale == 'sqrt-dim':
-                # ZO_grad = ZO_grad * math.sqrt(n_sample / (n_sample + torch.sum(mask).item()/batch_sz - 1))
                 ZO_grad = ZO_grad * math.sqrt((batch_sz * n_sample) / (batch_sz * n_sample + torch.sum(mask).item()/batch_sz - 1))
             elif configs.ZO_Estim.scale == 'dim':
-                # ZO_grad = ZO_grad * (n_sample / (self.n_sample + torch.sum(mask).item()/batch_sz - 1))
                 ZO_grad = ZO_grad * ((batch_sz * n_sample) / (batch_sz * n_sample + torch.sum(mask).item()/batch_sz - 1))
+                
             elif type(configs.ZO_Estim.scale) is int:
                 ZO_grad = ZO_grad / configs.ZO_Estim.scale
             else:
@@ -1486,9 +1485,9 @@ class ZO_Estim_MC(nn.Module):
             _, old_loss_vec = self.obj_fn(return_loss_reduction='none')
         
         for trainable_layer_name in self.trainable_layer_list:
-            trainable_layer_name = trainable_layer_name.split('.')
-            block_name = f'{trainable_layer_name[0]}.{trainable_layer_name[1]}'
-            block_number = int(trainable_layer_name[1])
+            trainable_layer_name_split = trainable_layer_name.split('.')
+            block_name = f'{trainable_layer_name_split[0]}.{trainable_layer_name_split[1]}'
+            block_number = int(trainable_layer_name_split[1])
 
             for splited_block in self.splited_block_list:
                 if splited_block.name == block_name:
@@ -1496,7 +1495,7 @@ class ZO_Estim_MC(nn.Module):
                     break
                 
             if 'conv' in trainable_layer_name:
-                conv_idx = int(trainable_layer_name[3])
+                conv_idx = int(trainable_layer_name_split[3])
             else:
                 conv_idx = None
             

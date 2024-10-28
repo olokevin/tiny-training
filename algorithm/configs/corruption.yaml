@@ -67,8 +67,8 @@ run_config:
   # n_epochs: 12500
 
   ### no gradint accumulation
-  bs256_lr: 0.1
-  # bs256_lr: 0.01
+  # bs256_lr: 0.1
+  bs256_lr: 0.01
   # bs256_lr: 0.001
   # bs256_lr: 0.00001
 
@@ -286,10 +286,10 @@ ZO_Estim:
   # trainable_layer_list: layer-last-30
 
   # trainable_layer_list: layer-selection
-  trainable_layer_list: ['1.5.conv.0']
+  # trainable_layer_list: ['1.5.conv.0']
 
   # trainable_layer_list: ['1.0.conv.0', '1.1.conv.0', '1.2.conv.0','1.3.conv.0']
-  # trainable_layer_list: ['1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
+  trainable_layer_list: ['1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
   # trainable_layer_list: ['1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.11.conv.0']
   # trainable_layer_list: ['1.11.conv.0', '1.12.conv.0', '1.13.conv.0']
 

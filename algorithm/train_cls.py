@@ -105,6 +105,10 @@ def main():
     dataset = build_dataset()
     data_loader = dict()
     for split in dataset:
+        if split == 'train':
+            batch_size = configs.data_provider.base_batch_size
+        else:
+            batch_size = 100
         sampler = torch.utils.data.DistributedSampler(
             dataset[split],
             num_replicas=dist.size(),
@@ -113,7 +117,7 @@ def main():
             shuffle=(split == 'train'))
         data_loader[split] = torch.utils.data.DataLoader(
             dataset[split],
-            batch_size=configs.data_provider.base_batch_size,
+            batch_size=batch_size,
             sampler=sampler,
             num_workers=configs.data_provider.n_worker,
             pin_memory=True,
