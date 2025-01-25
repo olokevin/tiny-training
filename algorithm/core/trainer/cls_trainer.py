@@ -63,8 +63,8 @@ class ClassificationTrainer(BaseTrainer):
                     })
                     t.update()
         return {
-            'val/top1': val_top1.avg.item(),
-            'val/loss': val_loss.avg.item(),
+            'val/top1': round(val_top1.avg.item(), 3),
+            'val/loss': round(val_loss.avg.item(), 3),
         }
 
     def train_one_epoch(self, epoch):
@@ -564,7 +564,7 @@ class ClassificationTrainer(BaseTrainer):
                 #     logger.info(f'epoch:{epoch} batch:{batch_idx}: f{train_info_dict}')
         
         return {
-            'train/top1': train_top1.avg.item(),
-            'train/loss': train_loss.avg.item(),
-            'train/lr': self.optimizer.param_groups[0]['lr'],
+            'train/top1': round(train_top1.avg.item(), 3),
+            'train/loss': round(train_loss.avg.item(), 3),
+            'train/lr': round(self.optimizer.param_groups[0]['lr'], 5),
         }

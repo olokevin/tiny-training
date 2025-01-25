@@ -44,10 +44,10 @@ def build_dataset():
         )
     elif configs.data_provider.dataset == 'visualwakewords':
         dataset = {
-            'train': pyvww.pytorch.VisualWakeWordsClassification(root="/home/yequan/dataset/vww_raw/coco_dataset/train2014", 
-                    annFile="/home/yequan/dataset/vww_raw/coco_dataset/annotations/person_keypoints_train2014.json", transform=ImageTransform()['train'],),
-            'val': pyvww.pytorch.VisualWakeWordsClassification(root="/home/yequan/dataset/vww_raw/coco_dataset/val2014", 
-                    annFile="/home/yequan/dataset/vww_raw/coco_dataset/annotations/person_keypoints_val2014.json", transform=ImageTransform()['val'],),
+            'train': pyvww.pytorch.VisualWakeWordsClassification(root=os.path.join(os.path.expanduser("~"), "dataset/vww/train2014"), 
+                    annFile=os.path.join(os.path.expanduser("~"), "dataset/vww/annotations/person_keypoints_train2014.json"), transform=ImageTransform()['train'],),
+            'val': pyvww.pytorch.VisualWakeWordsClassification(root=os.path.join(os.path.expanduser("~"), "dataset/vww/val2014"), 
+                    annFile=os.path.join(os.path.expanduser("~"), "dataset/vww/annotations/person_keypoints_val2014.json"), transform=ImageTransform()['val'],),
         }
     elif configs.data_provider.dataset == 'imagenet':
         dataset = {
