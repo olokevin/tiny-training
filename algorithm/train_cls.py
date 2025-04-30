@@ -19,6 +19,7 @@ from core.optimizer import build_optimizer
 from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn
 from core.trainer.cls_trainer import ClassificationTrainer
 from core.builder.lr_scheduler import build_lr_scheduler
+from core.trainer.pepita_trainer import PEPITATrainer
 
 import wandb
 def setup_wandb(cfg):
@@ -294,7 +295,19 @@ def main():
     else:
         ZO_Estim = None
 
-    trainer = ClassificationTrainer(model, data_loader, criterion, optimizer, lr_scheduler, ZO_Estim)
+    
+    
+    if hasattr(configs, 'pepita') and configs.pepita.en is True:
+        trainer = PEPITATrainer(
+            model=model,
+            data_loader=data_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler
+        )
+        
+    else:
+        trainer = ClassificationTrainer(model, data_loader, criterion, optimizer, lr_scheduler, ZO_Estim)
 
     # kick start training
     if configs.resume:

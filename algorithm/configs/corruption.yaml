@@ -252,9 +252,19 @@ train_config:
     'gamma': 0.1,
     'beta': 0.1,
   }
+
+# PEPITA Specific Parameters
+pepita:
+  en: True
+  # Gradient Estimation Parameters
+  sigma: 1.0  # Standard deviation for perturbation
+  n_samples: 1  # Number of samples for gradient estimation
+  
+  # Trainable Layers
+  trainable_layer_list: ['1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
   
 ZO_Estim:
-  en: True
+  # en: True
 
   fc_bp: False
   # fc_bp: cls_only
@@ -262,13 +272,14 @@ ZO_Estim:
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 100
+  n_sample: 50
   signSGD: False
 
   # n_sample_distri: uniform
   # n_sample_distri: dim
   n_sample_distri: half
 
+  ### default: scale: 1
   # scale: sqrt-dim
   scale: dim
   # scale: 100
@@ -322,7 +333,8 @@ ZO_Estim:
   obj_fn_type: classifier_layerwise
   perturb_method: mixture
 
-  split_block_number: 4
+  # split_block_number: 4
+  split_block_number: 5
 
   sigma: {
     'weight': 1,
@@ -373,12 +385,12 @@ ZO_Estim:
   # obj_fn_type: classifier
   # perturb_method: all_param
 
-  # # sigma: {
-  # #   'weight': 1,
-  # #   'bias': 100,
-  # # }
+  # sigma: {
+  #   'weight': 1,
+  #   'bias': 100,
+  # }
 
-  # sigma: 0.01
+  # # sigma: 0.01
 
   # param_update_method: None
 
