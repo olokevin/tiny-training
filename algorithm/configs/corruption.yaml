@@ -31,7 +31,7 @@ data_provider:
   num_classes: 10
   severity: 5
   train_n: 1000
-  corruption_type: gaussian_noise
+  corruption_type: contrast
   # corruption_type: [gaussian_noise, shot_noise, impulse_noise, speckle_noise, gaussian_blur, defocus_blur, glass_blur, motion_blur, zoom_blur, snow, frost, fog, brightness, contrast, elastic_transform, pixelate, jpeg_compression, saturate, spatter]
   load_model_path: './assets/mcunet_in1_cifar10.pth'
   # load_model_path: './assets/mcunet_in1_cifar10_full.pth'
@@ -68,7 +68,7 @@ run_config:
 
   ### no gradint accumulation
   # bs256_lr: 0.1
-  bs256_lr: 0.01
+  bs256_lr: 1
   # bs256_lr: 0.001
   # bs256_lr: 0.00001
 
@@ -79,7 +79,7 @@ run_config:
 
   # iteration_decay: 0
 
-  eval_per_epochs: 1
+  # eval_per_epochs: 1
 
   # optimizer
   # optimizer_name: sgd
@@ -87,13 +87,13 @@ run_config:
   # optimizer_name: adam
 
   # optimizer_name: sgd_int
-  # optimizer_name: sgd_int_nomom
+  optimizer_name: sgd_int_nomom
 
   # optimizer_name: sgd_scale
   # optimizer_name: sgd_scale_nomom
 
   # optimizer_name: sgd_scale_int
-  optimizer_name: sgd_scale_int_nomom
+  # optimizer_name: sgd_scale_int_nomom
 
   # lr_schedule_name: cosine
   # final_lr: 0.0001
@@ -255,16 +255,20 @@ train_config:
 
 # PEPITA Specific Parameters
 pepita:
-  en: True
-  # Gradient Estimation Parameters
-  sigma: 1.0  # Standard deviation for perturbation
-  n_samples: 1  # Number of samples for gradient estimation
+  # en: True
+
+  Bstd: 0.05  # Standard deviation for perturbation
+  trainable_layer_list: ['1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
+
+# PEPITA Specific Parameters
+forward_forward:
+  # en: True
   
-  # Trainable Layers
+  threshold: 0.5
   trainable_layer_list: ['1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
   
 ZO_Estim:
-  # en: True
+  en: True
 
   fc_bp: False
   # fc_bp: cls_only
@@ -330,34 +334,34 @@ ZO_Estim:
   set_seed: None
 
   ############################## Layerwise Mixture Perturbation ##############################
-  obj_fn_type: classifier_layerwise
-  perturb_method: mixture
-
-  # split_block_number: 4
-  split_block_number: 5
-
-  sigma: {
-    'weight': 1,
-    'bias': 100,
-    'actv': 5,
-  }
-  # sigma: 0.1
-
-  perturb_before_round: 0
-
-  sync_batch_perturb: 0
-  # sync_batch_perturb: 1
-
-  ############################## Layerwise Activation Perturbation ##############################
   # obj_fn_type: classifier_layerwise
-  # perturb_method: activation
+  # perturb_method: mixture
 
-  # sigma: 5
+  # # split_block_number: 4
+  # split_block_number: 5
+
+  # sigma: {
+  #   'weight': 1,
+  #   'bias': 100,
+  #   'actv': 5,
+  # }
+  # # sigma: 0.1
 
   # perturb_before_round: 0
 
   # sync_batch_perturb: 0
   # # sync_batch_perturb: 1
+
+  ############################## Layerwise Activation Perturbation ##############################
+  obj_fn_type: classifier_layerwise
+  perturb_method: activation
+
+  sigma: 5
+
+  perturb_before_round: 0
+
+  sync_batch_perturb: 0
+  # sync_batch_perturb: 1
 
   ############################## Layerwise Param Perturbation ##############################
   # obj_fn_type: classifier_layerwise

@@ -4,7 +4,7 @@ import numpy as np
 from ..utils import dist
 from ..utils.config import configs
 
-from .sgd_scale import SGDScale, SGDInt, SGDScaleInt
+from .sgd_scale import SGDScale, SGDInt, SGDScaleInt, AdamInt
 
 REGISTERED_OPTIMIZER_DICT = {
     'sgd': (torch.optim.SGD, {'momentum': 0.9, 'nesterov': False}),
@@ -20,6 +20,7 @@ REGISTERED_OPTIMIZER_DICT = {
     'sgd_scale_int_nomom': (SGDScaleInt, {'momentum': 0., 'nesterov': False}),    
     
     'adam': (torch.optim.Adam, {}),
+    'adam_int': (AdamInt, {}),
     'adamw': (torch.optim.AdamW, {}),
 }
 

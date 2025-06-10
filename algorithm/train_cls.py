@@ -20,6 +20,7 @@ from core.ZO_Estim.ZO_Estim_entry import build_ZO_Estim, build_obj_fn
 from core.trainer.cls_trainer import ClassificationTrainer
 from core.builder.lr_scheduler import build_lr_scheduler
 from core.trainer.pepita_trainer import PEPITATrainer
+from core.trainer.ff_trainer import FFTrainer
 
 import wandb
 def setup_wandb(cfg):
@@ -92,7 +93,8 @@ def main():
             configs.data_provider.root.split('/')[-1],
             configs.net_config.net_name, 
             training_method,
-            time.strftime("%Y%m%d-%H%M%S")+'-'+str(os.getpid())
+            # time.strftime("%Y%m%d-%H%M%S")+'-'+str(os.getpid())
+            str(os.getpid())
         )
     
     os.makedirs(configs.run_dir, exist_ok=True)
@@ -297,15 +299,29 @@ def main():
 
     
     
-    if hasattr(configs, 'pepita') and configs.pepita.en is True:
+    if hasattr(configs, 'pepita') and configs.pepita.en is True:        
         trainer = PEPITATrainer(
             model=model,
             data_loader=data_loader,
             criterion=criterion,
             optimizer=optimizer,
-            lr_scheduler=lr_scheduler
+            lr_scheduler=lr_scheduler,
+            nin=configs.data_provider.image_size * configs.data_provider.image_size * 3,
+            nout=configs.data_provider.num_classes,
+            Bstd=configs.pepita.Bstd,
+            trainable_layer_list=configs.pepita.trainable_layer_list
         )
-        
+    
+    elif hasattr(configs, 'forward_forward') and configs.forward_forward.en is True:
+        trainer = FFTrainer(
+            model=model,
+            data_loader=data_loader,
+            criterion=criterion,
+            optimizer=optimizer,
+            lr_scheduler=lr_scheduler,
+            trainable_layer_list=configs.forward_forward.trainable_layer_list,
+            threshold=configs.forward_forward.threshold
+        )
     else:
         trainer = ClassificationTrainer(model, data_loader, criterion, optimizer, lr_scheduler, ZO_Estim)
 

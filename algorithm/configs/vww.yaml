@@ -14,7 +14,7 @@ run_config:
   warmup_epochs: 1
   n_epochs: 20
 
-  bs256_lr: 0.1
+  bs256_lr: 0.01
 
   # iteration_decay: 0
 
@@ -45,9 +45,9 @@ backward_config:
   # enable_backward_config: 0
 
   ##### cls-only
-  # enable_backward_config: 1
-  # n_bias_update: 0
-  # n_weight_update: 0
+  enable_backward_config: 1
+  n_bias_update: 0
+  n_weight_update: 0
 
   ##### layer selection
   # enable_backward_config: 1  
@@ -61,11 +61,11 @@ backward_config:
   # n_bias_update: 6
 
   ##### sparse update (100KB scheme): 88.84%
-  enable_backward_config: 1  
-  n_bias_update: 22
-  manual_weight_idx: 21-24-27-30-36-39
-  # weight_update_ratio: 1-1-1-1-0.125-0.25
-  weight_update_ratio: 1-1-1-1-1-1
+  # enable_backward_config: 1  
+  # n_bias_update: 22
+  # manual_weight_idx: 21-24-27-30-36-39
+  # # weight_update_ratio: 1-1-1-1-0.125-0.25
+  # weight_update_ratio: 1-1-1-1-1-1
 
   ##### PokeEngine
   # enable_backward_config: 1  
@@ -115,7 +115,7 @@ train_config:
   # activation_func: TLU
   
 ZO_Estim:
-  # en: True
+  en: True
 
   # fc_bp: False
   fc_bp: cls_only
@@ -123,7 +123,7 @@ ZO_Estim:
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 100
+  n_sample: 50
   signSGD: False
 
   # n_sample_distri: uniform
@@ -150,8 +150,8 @@ ZO_Estim:
   # trainable_layer_list: ['1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
   # trainable_layer_list: ['1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.11.conv.0']
   # trainable_layer_list: ['1.11.conv.0', '1.12.conv.0', '1.13.conv.0']
-  # trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
-  trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
+  trainable_layer_list: ['1.12.conv.0', '1.12.conv.1', '1.12.conv.2', '1.13.conv.0', '1.13.conv.1', '1.13.conv.2']
+  # trainable_layer_list: ['1.7.conv.0', '1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.12.conv.0', '1.13.conv.0']
 
   estimate_method: forward
   # estimate_method: antithetic

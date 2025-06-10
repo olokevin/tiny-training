@@ -3,9 +3,9 @@ resume: 0
 # project: FGVC_ZO_INT
 
 data_provider:
-  dataset: cars
-  root: '~/dataset'
-  num_classes: 196
+  # dataset: cars
+  # root: '~/dataset'
+  # num_classes: 196
 
   # dataset: cifar10
   # root: '~/dataset'
@@ -28,9 +28,9 @@ data_provider:
   # num_classes: 101
   # num_samples_per_class: 10
 
-  # dataset: pets
-  # root: '~/dataset'
-  # num_classes: 37
+  dataset: pets
+  root: '~/dataset'
+  num_classes: 37
   
   # dataset: aircraft
   # root: '~/dataset'
@@ -46,8 +46,8 @@ data_provider:
   # load_model_path: './assets/mcunet_in1_cifar10.pth'
 
   # base_batch_size: 1
-  # base_batch_size: 128
-  base_batch_size: 100
+  base_batch_size: 128
+  # base_batch_size: 100
 
 run_config:
   # warmup_epochs: 0
@@ -57,8 +57,8 @@ run_config:
   # n_epochs: 2000
 
   ### no gradint accumulation
-  # bs256_lr: 0.1
-  bs256_lr: 0.01
+  # bs256_lr: 0.001
+  bs256_lr: 0.1
 
   ### gradient accumulation setting. should use the corresponding lr of batch size 1 
   # grad_accumulation_steps: 128
@@ -71,15 +71,16 @@ run_config:
   # optimizer_name: sgd
   # optimizer_name: sgd_nomom
   # optimizer_name: adam
+  # optimizer_name: adam_int
 
   # optimizer_name: sgd_int
-  # optimizer_name: sgd_int_nomom
+  optimizer_name: sgd_int_nomom
 
   # optimizer_name: sgd_scale
   # optimizer_name: sgd_scale_nomom
 
   # optimizer_name: sgd_scale_int
-  optimizer_name: sgd_scale_int_nomom
+  # optimizer_name: sgd_scale_int_nomom
 
 net_config:
   net_name: mcunet-5fps
@@ -215,7 +216,7 @@ ZO_Estim:
   # fc_bp: 'break_BP'
 
   name: ZO_Estim_MC
-  n_sample: 10
+  n_sample: 60
   signSGD: False
 
   # n_sample_distri: uniform

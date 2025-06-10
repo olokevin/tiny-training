@@ -52,3 +52,14 @@ class SGDScaleInt(torch.optim.SGD):
                     m.bias.data = m.bias.data.round().clamp(- 2 ** (4*m.w_bit - 1), 2 ** (4*m.w_bit - 1) - 1)
                 if m.weight.grad is not None:
                     m.weight.data = m.weight.data.round().clamp(- 2 ** (m.w_bit - 1), 2 ** (m.w_bit - 1) - 1)
+
+class AdamInt(torch.optim.Adam):
+    @staticmethod
+    def post_step(model):
+        from quantize.quantized_ops_diff import QuantizedConv2dDiff
+        for m in model.modules():
+            if isinstance(m, QuantizedConv2dDiff):
+                if m.bias.grad is not None:
+                    m.bias.data = m.bias.data.round().clamp(- 2 ** (4*m.w_bit - 1), 2 ** (4*m.w_bit - 1) - 1)
+                if m.weight.grad is not None:
+                    m.weight.data = m.weight.data.round().clamp(- 2 ** (m.w_bit - 1), 2 ** (m.w_bit - 1) - 1)

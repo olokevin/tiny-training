@@ -79,7 +79,13 @@ train_config:
 
   normalization_func: null
   activation_func: null
-  
+
+pepita:
+  en: false
+
+forward_forward:
+  en: false
+
 ZO_Estim:
   en: false
   fc_bp: false
