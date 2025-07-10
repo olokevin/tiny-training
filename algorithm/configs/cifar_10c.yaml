@@ -1,0 +1,134 @@
+resume: 0
+
+data_provider:
+  dataset: cifar10-c
+  root: '~/dataset'
+  num_classes: 10
+  severity: 5
+  train_n: 1000
+  corruption_type: gaussian_noise
+  # corruption_type: [gaussian_noise, shot_noise, impulse_noise, speckle_noise, gaussian_blur, defocus_blur, glass_blur, motion_blur, zoom_blur, snow, frost, fog, brightness, contrast, elastic_transform, pixelate, jpeg_compression, saturate, spatter]
+  load_model_path: './assets/mcunet_in1_cifar10.pth'
+  base_batch_size: 100
+
+run_config:
+  warmup_epochs: 0
+  n_epochs: 50
+
+  ### no gradint accumulation
+  bs256_lr: 0.01
+
+  # optimizer
+  optimizer_name: sgd_scale_int_nomom
+
+net_config:
+  net_name: mcunet-5fps
+
+backward_config:
+  enable_backward_config: 1
+  n_bias_update: 0
+  n_weight_update: 0
+
+  freeze_fc: 1
+  only_update_selected_bias: 1
+
+ZO_Estim:
+  en: True
+
+  fc_bp: False
+
+  name: ZO_Estim_MC
+  n_sample: 50
+  signSGD: False
+
+  n_sample_distri: half
+
+  scale: dim
+
+  trainable_param_list: ['weight', 'bias']
+
+  # trainable_layer_list: ['1.0.conv.0', '1.1.conv.0', '1.2.conv.0','1.3.conv.0']
+  trainable_layer_list: ['1.4.conv.0', '1.5.conv.0', '1.6.conv.0', '1.7.conv.0']
+  # trainable_layer_list: ['1.8.conv.0', '1.9.conv.0', '1.10.conv.0', '1.11.conv.0']
+  # trainable_layer_list: ['1.11.conv.0', '1.12.conv.0', '1.13.conv.0']
+  
+  estimate_method: forward
+  # estimate_method: antithetic
+
+  # sample_method: uniform
+  # sample_method: gaussian
+  sample_method: bernoulli
+  # sample_method: coord_basis
+
+  independent_wp: False
+  set_seed: None
+
+  ############################## Layerwise Mixture Perturbation ##############################
+  obj_fn_type: classifier_layerwise
+  perturb_method: mixture
+
+  # split_block_number: 4
+  split_block_number: 5
+
+  sigma: {
+    'weight': 1,
+    'bias': 100,
+    'actv': 5,
+  }
+  # sigma: 0.1
+
+  perturb_before_round: 0
+
+  sync_batch_perturb: 0
+  # sync_batch_perturb: 1
+
+  ############################## Layerwise Activation Perturbation ##############################
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: activation
+
+  # sigma: 5
+
+  # perturb_before_round: 0
+
+  # sync_batch_perturb: 0
+  # # sync_batch_perturb: 1
+
+  ############################## Layerwise Param Perturbation ##############################
+  # obj_fn_type: classifier_layerwise
+  # perturb_method: param
+
+  # sigma: {
+  #   'weight': 1,
+  #   'bias': 100,
+  # }
+
+  # # sigma: 0.01
+
+  # param_update_method: None
+  # # param_update_method: layerwise
+  # # param_update_method: blockwise
+  # # param_update_method: modelwise
+
+  ############################## Modelwise Activation Perturbation ##############################
+  # obj_fn_type: classifier
+  # perturb_method: all_activation
+
+  # sigma: 5
+  
+  ############################## Modelwise Param Perturbation ##############################
+  # obj_fn_type: classifier
+  # perturb_method: all_param
+
+  # sigma: {
+  #   'weight': 1,
+  #   'bias': 100,
+  # }
+
+  # # sigma: 0.01
+
+  # param_update_method: None
+
+  ############################## legacy ##############################
+  quantize_method: u_int-grad_fp
+  mask_method: None
+  prior_method: None

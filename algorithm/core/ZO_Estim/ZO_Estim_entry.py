@@ -50,12 +50,9 @@ def build_ZO_Estim(config, model, obj_fn):
             trainable_param_list = config.trainable_param_list,
             trainable_layer_list = config.trainable_layer_list,
 
-            quantize_method = config.quantize_method,
-            mask_method = config.mask_method,
             estimate_method = config.estimate_method,
             perturb_method = config.perturb_method,
-            sample_method = config.sample_method,
-            prior_method = config.prior_method
+            sample_method = config.sample_method
         )
         return ZO_Estim
     else:
