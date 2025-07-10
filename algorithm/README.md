@@ -6,11 +6,10 @@ We provide the code to simulate the BP-free on-device training on GPU servers.
 **Environment setup.** We recommend using Anaconda to set up the environment. Please find an example set up below:
 
 ```bash
-conda create -n mcunetv3 python=3.8
-conda activate mcunetv3
-conda install pytorch torchvision torchaudio pytorch-cuda=11.7 -c pytorch -c nvidia
-pip install easydict
-pip install timm
+conda create -n mcuzo python=3.8
+conda activate mcuzo
+pip install -r requirements.txt
+
 ```
 
 **Dataset preparation**. 
